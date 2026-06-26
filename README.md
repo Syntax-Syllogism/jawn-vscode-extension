@@ -4,17 +4,43 @@ Jawn is a VS Code extension for guided `@syntax-syllogism/jawn` Salesforce CLI w
 
 ## Features
 
-- Command Palette entries for the v1 user lifecycle commands:
-  - `SF Jawn: User Provision`
-  - `SF Jawn: User Access`
-  - `SF Jawn: User Strip`
-  - `SF Jawn: User Freeze`
-  - `SF Jawn: User Unfreeze`
-- A dedicated Jawn activity-bar view grouped by workflow area.
-- Native VS Code prompts for orgs, definition files, enum values, text values, and boolean options.
+- Command Palette entries and Jawn sidebar actions for every supported command.
+- User Lifecycle commands:
+  - `SF Jawn: User Provision` (`sf jawn user provision`)
+  - `SF Jawn: User Access` (`sf jawn user access`)
+  - `SF Jawn: User Strip` (`sf jawn user strip`)
+  - `SF Jawn: User Freeze` (`sf jawn user freeze`)
+  - `SF Jawn: User Unfreeze` (`sf jawn user unfreeze`)
+- AEP Generation commands:
+  - `SF Jawn: AEP Generate` (`sf jawn aep generate`)
+  - `SF Jawn: AEP Generate Selector` (`sf jawn aep generate selector`)
+  - `SF Jawn: AEP Generate Domain` (`sf jawn aep generate domain`)
+  - `SF Jawn: AEP Generate Service` (`sf jawn aep generate service`)
+  - `SF Jawn: AEP Generate Unit of Work` (`sf jawn aep generate unitofwork`)
+  - `SF Jawn: AEP Selector Method` (`sf jawn aep generate selector method`)
+  - `SF Jawn: AEP Selector Field Injection` (`sf jawn aep generate selector field-injection`)
+  - `SF Jawn: AEP Generate Action` (`sf jawn aep generate action`)
+  - `SF Jawn: AEP Generate Criteria` (`sf jawn aep generate criteria`)
+- Dedicated Jawn activity-bar view:
+  - User Lifecycle commands remain flat.
+  - AEP commands are grouped into Generators, Selector Helpers, and Domain-Process Bindings.
+- Guided native inputs:
+  - Salesforce org picker with `jawn.defaultTargetOrg` fallback.
+  - File pickers for definition files.
+  - Folder picker for AEP `--output-path`.
+  - QuickPick enums for flags such as `--trigger-operation`.
+  - Single-select QuickPick for mutually exclusive choices such as AEP flavor (`--at4dx` or `--fflib`) and user target (`--user` or `--users-def`).
+  - Multi-select QuickPick for boolean options, including AEP `--dry-run` and aggregate artifact toggles.
+  - InputBox prompts for string values such as SObject names, class names, prefixes, and ordering tokens.
+- AEP aggregate generation validates that at least one artifact group is selected: selector, domain, or unit of work.
+- Org-less AEP helper commands run without prompting for an org; AEP service generation lets the org prompt be skipped.
 - Background `sf jawn ...` execution through `child_process.spawn`, streamed to the `Jawn` Output Channel.
-- Background CLI execution with streamed human-readable output and `--no-prompt` on commands that support it.
+- Cancellable progress notifications while commands run.
+- Human-readable CLI output by default; the extension does not force `--json`.
+- Automatic `--no-prompt` only for commands that support it.
 - Dry-run-first confirmation for destructive user strip operations.
+- Optional dry-run support for AEP generation commands, with an Open Folder action after successful file generation.
+- Pre-run detection for the Salesforce CLI and the jawn plugin, with an install action when the plugin is missing.
 
 ## Requirements
 
