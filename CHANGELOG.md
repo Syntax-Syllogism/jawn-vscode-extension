@@ -6,15 +6,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.1.3] - 2026-06-27
 
-### Added
+### Changed
 
-- Use Quick Pick interface for output directory selection
+- Output directory selection now uses Quick Pick interface
 
 ### Fixed
 
-- Inlined esbuild problem matcher for the watch task
-- Fixed sidebar icon rendering as monochrome silhouette
-- Fixed Salesforce CLI resolution on Windows systems
+- Sidebar icon now renders as monochrome silhouette
+- Fixed sf CLI resolution on Windows systems
 
 ## [0.1.1] - 2026-06-26
 
