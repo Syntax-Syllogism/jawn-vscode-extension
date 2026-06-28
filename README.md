@@ -58,14 +58,29 @@ The extension checks for `sf` and `sf jawn --help` before the first command run.
 
 ## Development
 
+### Quick Start
+
 ```sh
 npm install
 npm test
 npm run package:vsix
 ```
 
+See [docs/README.md](docs/README.md) for comprehensive developer documentation, including:
+
+- **[Architecture Overview](docs/architecture.md)** — Design and components
+- **[Input System](docs/input-system.md)** — How user input is collected
+- **[Command Runner](docs/command-runner.md)** — Command execution
+- **[Command Registry](docs/command-registry.md)** — Command definitions and generation
+- **[Extending the Extension](docs/extending.md)** — Adding new commands and features
+- **[Testing Guide](docs/testing.md)** — Writing and running tests
+
+### Updating Commands
+
 Refresh the committed command registry from a jawn oclif manifest:
 
 ```sh
 npm run gen:commands -- vendor/jawn.oclif.manifest.json src/registry/commands.generated.ts
 ```
+
+This is needed when the jawn plugin adds new commands or changes flag definitions.

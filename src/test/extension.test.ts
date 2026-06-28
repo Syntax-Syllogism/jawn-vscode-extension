@@ -597,6 +597,33 @@ suite('Jawn extension', () => {
 		]);
 	});
 
+	test('runner logs malformed JSON-like output and falls back to process exit code', async () => {
+		const access = commandById('jawn.user.access');
+		const infos: string[] = [];
+		const errors: string[] = [];
+		const output = new MemoryOutputChannel();
+		const runner = createCommandRunner({
+			output,
+			spawnProcess: () => fakeChildProcess('{"status":0,', 0),
+			withProgress: async (_options, task) => task({ report: () => undefined }, new vscode.CancellationTokenSource().token),
+			showInformationMessage: async (message: string) => {
+				infos.push(message);
+				return 'Run' as never;
+			},
+			showWarningMessage: async () => undefined as never,
+			showErrorMessage: async (message: string) => {
+				errors.push(message);
+				return undefined as never;
+			},
+		} satisfies RunnerDeps);
+
+		await runner.run(access, { args: ['--target-org', 'dev'], displayArgs: ['--target-org', 'dev'] });
+
+		assert.match(output.value, /\[debug\] Unable to parse Salesforce CLI JSON envelope:/);
+		assert.deepStrictEqual(infos, ['SF Jawn: User Access completed.']);
+		assert.deepStrictEqual(errors, []);
+	});
+
 	test('gatherInputs passes flag default and last-used value into pickOutputDirectory options', async () => {
 		const command = commandById('jawn.aep.generate.selector');
 		const store = new LastValueStore(new MemoryMemento());

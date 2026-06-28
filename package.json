@@ -2,7 +2,7 @@
   "name": "jawn-ext",
   "displayName": "Jawn",
   "description": "Guided VS Code workflows for the @syntax-syllogism/jawn Salesforce CLI plugin.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "syntax-syllogism",
   "author": "Jake Richter <j.p.richter@gmail.com>",
   "license": "MIT",

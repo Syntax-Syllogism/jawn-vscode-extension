@@ -45,12 +45,33 @@ export async function gatherInputs(
 	store: LastValueStore,
 	inputApi: InputApi = createVsCodeInputApi(),
 ): Promise<GatheredInputs | undefined> {
-	const args: string[] = [];
-	const displayArgs: string[] = [];
 	const flags = [...command.flags];
+	const gathered = await gatherNamedFlags(command, flags, store, inputApi);
+	if (!gathered) {
+		return undefined;
+	}
+
+	const pickedBooleanNames = await gatherBooleanFlags(gathered, flags, inputApi);
+	if (!pickedBooleanNames) {
+		return undefined;
+	}
+
+	if (!await validateRequiredBooleanSelection(command, pickedBooleanNames, inputApi)) {
+		return undefined;
+	}
+
+	return gathered;
+}
+
+async function gatherNamedFlags(
+	command: CommandDef,
+	flags: readonly FlagDef[],
+	store: LastValueStore,
+	inputApi: InputApi,
+): Promise<GatheredInputs | undefined> {
+	const gathered: GatheredInputs = { args: [], displayArgs: [] };
 	const exclusiveGroups = groupExclusiveFlags(flags);
 	const handledExclusiveGroups = new Set<string>();
-
 	for (const flag of flags) {
 		if (flag.exclusiveGroup && handledExclusiveGroups.has(flag.exclusiveGroup)) {
 			continue;
@@ -59,13 +80,12 @@ export async function gatherInputs(
 		if (flag.exclusiveGroup) {
 			handledExclusiveGroups.add(flag.exclusiveGroup);
 			const groupFlags = exclusiveGroups.get(flag.exclusiveGroup) ?? [];
-			const gathered = await gatherExclusiveGroup(command, flag.exclusiveGroup, groupFlags, store, inputApi);
-			if (!gathered) {
+			const groupGathered = await gatherExclusiveGroup(command, flag.exclusiveGroup, groupFlags, store, inputApi);
+			if (!groupGathered) {
 				return undefined;
 			}
 
-			args.push(...gathered.args);
-			displayArgs.push(...gathered.displayArgs);
+			appendGatheredInputs(gathered, groupGathered);
 			continue;
 		}
 
@@ -73,38 +93,57 @@ export async function gatherInputs(
 			continue;
 		}
 
-		const gathered = await gatherFlag(command, flag, store, inputApi);
-		if (!gathered && flag.required) {
+		const flagGathered = await gatherFlag(command, flag, store, inputApi);
+		if (!flagGathered && flag.required) {
 			return undefined;
 		}
 
-		if (gathered) {
-			args.push(...gathered.args);
-			displayArgs.push(...gathered.displayArgs);
+		if (flagGathered) {
+			appendGatheredInputs(gathered, flagGathered);
 		}
 	}
 
+	return gathered;
+}
+
+async function gatherBooleanFlags(
+	gathered: GatheredInputs,
+	flags: readonly FlagDef[],
+	inputApi: InputApi,
+): Promise<ReadonlySet<string> | undefined> {
 	const pickedBooleanNames = new Set<string>();
 	const booleanFlags = flags.filter((flag) => flag.kind === 'boolean' && !flag.exclusiveGroup);
-	if (booleanFlags.length > 0) {
-		const picked = await inputApi.showBooleanPick(booleanFlags.map((flag) => ({ label: `--${flag.name}`, description: flag.summary, flag })), 'Select options to enable');
-		if (!picked) {
-			return undefined;
-		}
-
-		for (const item of picked) {
-			pickedBooleanNames.add(item.flag.name);
-			args.push(`--${item.flag.name}`);
-			displayArgs.push(`--${item.flag.name}`);
-		}
+	if (booleanFlags.length === 0) {
+		return pickedBooleanNames;
 	}
 
-	if (command.requireOneOf && !command.requireOneOf.some((flagName) => pickedBooleanNames.has(flagName))) {
-		await inputApi.showWarningMessage(`Select at least one of: ${command.requireOneOf.map((flagName) => `--${flagName}`).join(', ')}`);
+	const picked = await inputApi.showBooleanPick(booleanPickItems(booleanFlags), 'Select options to enable');
+	if (!picked) {
 		return undefined;
 	}
 
-	return { args, displayArgs };
+	for (const item of picked) {
+		pickedBooleanNames.add(item.flag.name);
+		appendGatheredInputs(gathered, {
+			args: [`--${item.flag.name}`],
+			displayArgs: [`--${item.flag.name}`],
+		});
+	}
+
+	return pickedBooleanNames;
+}
+
+async function validateRequiredBooleanSelection(
+	command: CommandDef,
+	pickedBooleanNames: ReadonlySet<string>,
+	inputApi: InputApi,
+): Promise<boolean> {
+	if (!command.requireOneOf || command.requireOneOf.some((flagName) => pickedBooleanNames.has(flagName))) {
+		return true;
+	}
+
+	await inputApi.showWarningMessage(`Select at least one of: ${command.requireOneOf.map((flagName) => `--${flagName}`).join(', ')}`);
+	return false;
 }
 
 async function gatherExclusiveGroup(
@@ -185,6 +224,15 @@ async function gatherFlag(
 
 function quoteDisplayArg(value: string): string {
 	return /\s/.test(value) ? JSON.stringify(value) : value;
+}
+
+function appendGatheredInputs(target: GatheredInputs, source: GatheredInputs): void {
+	target.args.push(...source.args);
+	target.displayArgs.push(...source.displayArgs);
+}
+
+function booleanPickItems(flags: readonly FlagDef[]): BooleanPick[] {
+	return flags.map((flag) => ({ label: `--${flag.name}`, description: flag.summary, flag }));
 }
 
 function getLastValue(commandId: string, flagName: string, store: LastValueStore): string | undefined {

@@ -30,44 +30,21 @@ interface RunResult {
 	cancelled: boolean;
 }
 
+interface SfCommandResult {
+	cancelled: boolean;
+	succeeded: boolean;
+	message?: string;
+}
+
+interface ExecutionStrategy {
+	run(command: CommandDef, inputs: GatheredInputs): Promise<void>;
+}
+
 export function createCommandRunner(deps: RunnerDeps): CommandRunner {
+	const adapter = new SfCliAdapter(deps);
 	return {
 		async run(command, inputs): Promise<void> {
-			const baseArgs = buildJawnArgs(command, inputs.args);
-			const displayCommand = `sf ${buildDisplayArgs(command, inputs.displayArgs).join(' ')}`;
-			if (requiresRunConfirmation(command)) {
-				const runPrompt = command.destructive ? `Preview ${displayCommand}, then confirm before applying changes?` : `Run ${displayCommand}?`;
-				const runChoice = await deps.showInformationMessage(runPrompt, { modal: true }, 'Run');
-				if (runChoice !== 'Run') {
-					return;
-				}
-			}
-
-			if (command.destructive) {
-				const dryRunArgs = withFlag(baseArgs, '--dry-run');
-				deps.output.show(true);
-				deps.output.appendLine(`$ sf ${dryRunArgs.join(' ')}`);
-				const dryRun = await spawnWithProgress(deps, command, dryRunArgs, 'Previewing jawn strip changes');
-				if (dryRun.cancelled) {
-					return;
-				}
-				if (!isSuccess(dryRun)) {
-					deps.showErrorMessage(`${command.title} dry run failed. See the Jawn output channel.`);
-					deps.output.show(true);
-					return;
-				}
-
-				const apply = await deps.showWarningMessage('Apply the strip changes shown in the Jawn output channel?', { modal: true }, 'Apply');
-				if (apply !== 'Apply') {
-					return;
-				}
-
-				const applyArgs = withoutFlag(baseArgs, '--dry-run');
-				await runAndReport(deps, command, applyArgs);
-				return;
-			}
-
-			await runAndReport(deps, command, baseArgs);
+			return strategyFor(command, deps, adapter).run(command, inputs);
 		},
 	};
 }
@@ -80,15 +57,143 @@ export function buildDisplayArgs(command: CommandDef, displayInputArgs: readonly
 	return [...command.cliId.split(' '), ...displayInputArgs];
 }
 
-async function runAndReport(deps: RunnerDeps, command: CommandDef, args: readonly string[]): Promise<void> {
-	deps.output.show(true);
-	deps.output.appendLine(`$ sf ${args.join(' ')}`);
-	const result = await spawnWithProgress(deps, command, args, `Running ${command.title}`);
+function strategyFor(command: CommandDef, deps: RunnerDeps, adapter: SfCliAdapter): ExecutionStrategy {
+	return command.destructive ? new DestructiveCommandStrategy(deps, adapter) : new StandardCommandStrategy(deps, adapter);
+}
+
+class StandardCommandStrategy implements ExecutionStrategy {
+	public constructor(
+		private readonly deps: RunnerDeps,
+		private readonly adapter: SfCliAdapter,
+	) {}
+
+	public async run(command: CommandDef, inputs: GatheredInputs): Promise<void> {
+		const args = buildJawnArgs(command, inputs.args);
+		if (!await confirmRun(this.deps, command, inputs)) {
+			return;
+		}
+
+		await runAndReport(this.deps, this.adapter, command, args);
+	}
+}
+
+class DestructiveCommandStrategy implements ExecutionStrategy {
+	public constructor(
+		private readonly deps: RunnerDeps,
+		private readonly adapter: SfCliAdapter,
+	) {}
+
+	public async run(command: CommandDef, inputs: GatheredInputs): Promise<void> {
+		const baseArgs = buildJawnArgs(command, inputs.args);
+		if (!await confirmRun(this.deps, command, inputs)) {
+			return;
+		}
+
+		const dryRun = await this.adapter.run(command, withFlag(baseArgs, '--dry-run'), 'Previewing jawn strip changes');
+		if (dryRun.cancelled) {
+			return;
+		}
+		if (!dryRun.succeeded) {
+			this.deps.showErrorMessage(`${command.title} dry run failed. See the Jawn output channel.`);
+			this.deps.output.show(true);
+			return;
+		}
+
+		const apply = await this.deps.showWarningMessage('Apply the strip changes shown in the Jawn output channel?', { modal: true }, 'Apply');
+		if (apply !== 'Apply') {
+			return;
+		}
+
+		await runAndReport(this.deps, this.adapter, command, withoutFlag(baseArgs, '--dry-run'));
+	}
+}
+
+class SfCliAdapter {
+	public constructor(private readonly deps: RunnerDeps) {}
+
+	public async run(command: CommandDef, args: readonly string[], title: string): Promise<SfCommandResult> {
+		this.deps.output.show(true);
+		this.deps.output.appendLine(`$ sf ${args.join(' ')}`);
+		const result = await this.spawnWithProgress(args, title);
+		if (result.cancelled) {
+			return { cancelled: true, succeeded: false };
+		}
+
+		const payload = this.parseJsonEnvelope(result.stdout) ?? this.parseJsonEnvelope(result.stderr);
+		return {
+			cancelled: false,
+			succeeded: payload && typeof payload.status === 'number' ? payload.status === 0 : result.code === 0,
+			message: successMessage(command, payload),
+		};
+	}
+
+	private spawnWithProgress(args: readonly string[], title: string): Promise<RunResult> {
+		return Promise.resolve(this.deps.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title, cancellable: true },
+			(_progress, token) => this.runProcess(args, token),
+		));
+	}
+
+	private runProcess(args: readonly string[], token: vscode.CancellationToken): Promise<RunResult> {
+		return new Promise((resolve) => {
+			const child = this.deps.spawnProcess('sf', args, {
+				cwd: this.deps.workspaceFolder,
+				env: process.env,
+			});
+			let stdout = '';
+			let stderr = '';
+			let cancelled = false;
+
+			const cancel = token.onCancellationRequested(() => {
+				cancelled = true;
+				child.kill();
+			});
+
+			child.stdout.on('data', (chunk: Buffer | string) => {
+				const text = stripAnsi(String(chunk));
+				stdout += text;
+				this.deps.output.append(text);
+			});
+			child.stderr.on('data', (chunk: Buffer | string) => {
+				const text = stripAnsi(String(chunk));
+				stderr += text;
+				this.deps.output.append(text);
+			});
+			child.on('close', (code) => {
+				cancel.dispose();
+				resolve({ code, stdout, stderr, cancelled });
+			});
+		});
+	}
+
+	private parseJsonEnvelope(value: string): SfJsonEnvelope | undefined {
+		const trimmed = value.trim();
+		if (!looksLikeJsonEnvelope(trimmed)) {
+			return undefined;
+		}
+
+		try {
+			return JSON.parse(trimmed) as SfJsonEnvelope;
+		} catch (error) {
+			this.deps.output.appendLine(`[debug] Unable to parse Salesforce CLI JSON envelope: ${error instanceof Error ? error.message : String(error)}`);
+			return undefined;
+		}
+	}
+}
+
+interface SfJsonEnvelope {
+	status?: number;
+	result?: unknown;
+	message?: string;
+}
+
+async function runAndReport(deps: RunnerDeps, adapter: SfCliAdapter, command: CommandDef, args: readonly string[]): Promise<void> {
+	const result = await adapter.run(command, args, `Running ${command.title}`);
 	if (result.cancelled) {
 		return;
 	}
 
-	if (isSuccess(result)) {
+	if (result.succeeded) {
 		await reportSuccess(deps, command, inputsFromArgs(command, args), result);
 		return;
 	}
@@ -97,65 +202,19 @@ async function runAndReport(deps: RunnerDeps, command: CommandDef, args: readonl
 	deps.output.show(true);
 }
 
-function spawnWithProgress(deps: RunnerDeps, command: CommandDef, args: readonly string[], title: string): Promise<RunResult> {
-	return Promise.resolve(deps.withProgress(
-		{ location: vscode.ProgressLocation.Notification, title, cancellable: true },
-		(_progress, token) => runProcess(deps, command, args, token),
-	));
-}
-
-function runProcess(deps: RunnerDeps, _command: CommandDef, args: readonly string[], token: vscode.CancellationToken): Promise<RunResult> {
-	return new Promise((resolve) => {
-		const child = deps.spawnProcess('sf', args, {
-			cwd: deps.workspaceFolder,
-			env: process.env,
-		});
-		let stdout = '';
-		let stderr = '';
-		let cancelled = false;
-
-		const cancel = token.onCancellationRequested(() => {
-			cancelled = true;
-			child.kill();
-		});
-
-		child.stdout.on('data', (chunk: Buffer | string) => {
-			const text = stripAnsi(String(chunk));
-			stdout += text;
-			deps.output.append(text);
-		});
-		child.stderr.on('data', (chunk: Buffer | string) => {
-			const text = stripAnsi(String(chunk));
-			stderr += text;
-			deps.output.append(text);
-		});
-		child.on('close', (code) => {
-			cancel.dispose();
-			resolve({ code, stdout, stderr, cancelled });
-		});
-	});
-}
-
-function isSuccess(result: RunResult): boolean {
-	const payload = parseJsonEnvelope(result.stdout) ?? parseJsonEnvelope(result.stderr);
-	if (payload && typeof payload.status === 'number') {
-		return payload.status === 0;
+async function confirmRun(deps: RunnerDeps, command: CommandDef, inputs: GatheredInputs): Promise<boolean> {
+	if (!requiresRunConfirmation(command)) {
+		return true;
 	}
 
-	return result.code === 0;
+	const displayCommand = `sf ${buildDisplayArgs(command, inputs.displayArgs).join(' ')}`;
+	const runPrompt = command.destructive ? `Preview ${displayCommand}, then confirm before applying changes?` : `Run ${displayCommand}?`;
+	const runChoice = await deps.showInformationMessage(runPrompt, { modal: true }, 'Run');
+	return runChoice === 'Run';
 }
 
-function parseJsonEnvelope(value: string): { status?: number; result?: unknown; message?: string } | undefined {
-	const trimmed = value.trim();
-	if (!trimmed.startsWith('{')) {
-		return undefined;
-	}
-
-	try {
-		return JSON.parse(trimmed) as { status?: number; result?: unknown; message?: string };
-	} catch {
-		return undefined;
-	}
+function looksLikeJsonEnvelope(value: string): boolean {
+	return value.startsWith('{');
 }
 
 function withFlag(args: readonly string[], flag: string): string[] {
@@ -174,8 +233,7 @@ function requiresRunConfirmation(command: CommandDef): boolean {
 	return command.supportsNoPrompt === true;
 }
 
-function successMessage(command: CommandDef, result: RunResult): string {
-	const payload = parseJsonEnvelope(result.stdout) ?? parseJsonEnvelope(result.stderr);
+function successMessage(command: CommandDef, payload: SfJsonEnvelope | undefined): string {
 	if (payload?.message) {
 		return payload.message;
 	}
@@ -190,19 +248,19 @@ function successMessage(command: CommandDef, result: RunResult): string {
 	return `${command.title} completed.`;
 }
 
-async function reportSuccess(deps: RunnerDeps, command: CommandDef, inputArgs: readonly string[], result: RunResult): Promise<void> {
+async function reportSuccess(deps: RunnerDeps, command: CommandDef, inputArgs: readonly string[], result: SfCommandResult): Promise<void> {
 	if (inputArgs.includes('--dry-run')) {
-		deps.showInformationMessage(successMessage(command, result));
+		deps.showInformationMessage(result.message ?? `${command.title} completed.`);
 		return;
 	}
 
 	const outputDir = outputDirectory(command, inputArgs, deps.workspaceFolder);
 	if (!outputDir) {
-		deps.showInformationMessage(successMessage(command, result));
+		deps.showInformationMessage(result.message ?? `${command.title} completed.`);
 		return;
 	}
 
-	const choice = await deps.showInformationMessage(successMessage(command, result), 'Open Folder');
+	const choice = await deps.showInformationMessage(result.message ?? `${command.title} completed.`, 'Open Folder');
 	if (choice === 'Open Folder') {
 		await (deps.executeCommand ?? vscode.commands.executeCommand)('revealInExplorer', vscode.Uri.file(outputDir));
 	}
