@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 interface ManifestFlag {
 	name?: string;
@@ -56,7 +57,7 @@ const titleById = new Map([
 	['jawn user strip', 'SF Jawn: User Strip'],
 	['jawn user freeze', 'SF Jawn: User Freeze'],
 	['jawn user unfreeze', 'SF Jawn: User Unfreeze'],
-	['jawn aep generate', 'SF Jawn: AEP Generate'],
+	['jawn aep generate', 'SF Jawn: AEP Generate (Multiple)'],
 	['jawn aep generate selector', 'SF Jawn: AEP Generate Selector'],
 	['jawn aep generate domain', 'SF Jawn: AEP Generate Domain'],
 	['jawn aep generate service', 'SF Jawn: AEP Generate Service'],
@@ -85,15 +86,15 @@ const groupById = new Map([
 ]);
 
 const subgroupById = new Map([
-	['jawn aep generate', 'Generators'],
-	['jawn aep generate selector', 'Generators'],
-	['jawn aep generate domain', 'Generators'],
-	['jawn aep generate service', 'Generators'],
-	['jawn aep generate unitofwork', 'Generators'],
-	['jawn aep generate selector method', 'Selector Helpers'],
-	['jawn aep generate selector field-injection', 'Selector Helpers'],
-	['jawn aep generate action', 'Domain-Process Bindings'],
-	['jawn aep generate criteria', 'Domain-Process Bindings'],
+	['jawn aep generate', 'Pattern Layers'],
+	['jawn aep generate selector', 'Pattern Layers'],
+	['jawn aep generate domain', 'Pattern Layers'],
+	['jawn aep generate service', 'Pattern Layers'],
+	['jawn aep generate unitofwork', 'Pattern Layers'],
+	['jawn aep generate selector method', 'Selector Injection (AT4DX)'],
+	['jawn aep generate selector field-injection', 'Selector Injection (AT4DX)'],
+	['jawn aep generate action', 'Domain Processes (AT4DX)'],
+	['jawn aep generate criteria', 'Domain Processes (AT4DX)'],
 ]);
 
 const requireOneOfById = new Map([
@@ -108,12 +109,17 @@ const guiHiddenFlagsByCommand = new Map<string, Set<string>>([
 ]);
 
 const placeholderByCommandFlag = new Map([
-	['*:user', 'myUser@email.com'],
+	['*:user', 'Username:myUser@email.com'],
 	['jawn user access:target', 'Object__c.Field__c'],
 ]);
 
 const summaryByCommandFlag = new Map([
-	['*:user', 'User value to match.'],
+	['*:user', 'Target a single user as field:value (e.g. Username:user@example.com).'],
+	['jawn user strip:external-id', 'Default field used to match users in the definition file.'],
+	['jawn user freeze:external-id', 'Default field used to match users in the definition file.'],
+	['jawn user unfreeze:external-id', 'Default field used to match users in the definition file.'],
+	['jawn aep generate action:class-name', 'Action class name to generate.'],
+	['jawn aep generate criteria:class-name', 'Criteria class name to generate.'],
 ]);
 
 export function generateRegistry(manifest: OclifManifest): string {
@@ -168,6 +174,7 @@ function commandDef(command: ManifestCommand): Record<string, unknown> {
 				options: flag.options,
 				placeholder: placeholderFor(cliId, name),
 				exclusiveGroup: exclusiveGroupFor(command, name),
+				dependsOnFlag: dependsOnFlagFor(command, name),
 				default: flag.default,
 			})),
 	});
@@ -217,6 +224,22 @@ function exclusiveGroupFor(command: ManifestCommand, flagName: string): string |
 	return undefined;
 }
 
+function dependsOnFlagFor(command: ManifestCommand, flagName: string): string | undefined {
+	if (flagName !== 'external-id') {
+		return undefined;
+	}
+
+	// `external-id` only sets the default match field for `--users-def` entries, so
+	// defer it to the def-file branch of the userTarget choice (single-user mode
+	// carries its own `field:value`). Scope to commands that offer that choice.
+	const commandFlagNames = new Set(Object.keys(command.flags ?? {}));
+	if (commandFlagNames.has('user') && commandFlagNames.has('users-def')) {
+		return 'users-def';
+	}
+
+	return undefined;
+}
+
 function placeholderFor(commandId: string, flagName: string): string | undefined {
 	return placeholderByCommandFlag.get(`${commandId}:${flagName}`) ?? placeholderByCommandFlag.get(`*:${flagName}`);
 }
@@ -230,10 +253,9 @@ function flagOrder(commandId: string, flagName: string): number {
 		return 0;
 	}
 
-	if (flagName === 'external-id') {
-		return -2;
-	}
-
+	// Surface the userTarget choice (single user vs. definition file) before
+	// `--target-org` and the rest. `--external-id` is not ordered here: it carries
+	// `dependsOnFlag` and is only prompted within the `--users-def` branch.
 	if (flagName === 'user') {
 		return -1;
 	}
@@ -253,7 +275,7 @@ function omitUndefined<T extends Record<string, unknown>>(value: T): Record<stri
 	return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 	const manifestPath = resolve(process.argv[2] ?? 'vendor/jawn.oclif.manifest.json');
 	const outputPath = resolve(process.argv[3] ?? 'src/registry/commands.generated.ts');
 	const packageJsonPath = resolve(process.argv[4] ?? 'package.json');

@@ -2,12 +2,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { pickFolder } from './filePicker';
+import { showWorkspaceQuickPick, type WorkspaceQuickPickItem } from './workspaceQuickPick';
 import type { CommandDef, FlagDef } from '../registry/types';
 
-export interface OutputDirectoryChoice extends vscode.QuickPickItem {
-	value?: string;
-	custom?: boolean;
-}
+export type OutputDirectoryChoice = WorkspaceQuickPickItem;
 
 export interface PickOutputDirectoryOptions {
 	command: CommandDef;
@@ -18,19 +16,15 @@ export interface PickOutputDirectoryOptions {
 }
 
 const NOISE_DIRS = new Set(['.git', '.sf', '.sfdx', 'node_modules', 'dist', 'out', 'coverage', '.vscode']);
+const CUSTOM_FOLDER_VALUE = '__jawn_choose_different_folder__';
 
 export async function pickOutputDirectory(options: PickOutputDirectoryOptions): Promise<string | undefined> {
 	const { label, defaultValue, lastValue } = options;
 	const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-	const seen = new Set<string>();
 	const items: OutputDirectoryChoice[] = [];
 
 	function addCandidate(value: string, description: string): void {
-		if (seen.has(value)) {
-			return;
-		}
-		seen.add(value);
 		items.push({ label: value, description, value });
 	}
 
@@ -60,22 +54,23 @@ export async function pickOutputDirectory(options: PickOutputDirectoryOptions): 
 		}
 	}
 
-	items.push({ label: '$(file-directory) Choose Different Folder...', custom: true });
+	items.push({ label: '$(file-directory) Choose Different Folder...', value: CUSTOM_FOLDER_VALUE });
 
-	const picked = await vscode.window.showQuickPick(items, {
+	const pickedValue = await showWorkspaceQuickPick({
+		items,
 		placeHolder: label,
 		matchOnDescription: true,
 	});
 
-	if (!picked) {
+	if (!pickedValue) {
 		return undefined;
 	}
 
-	if (picked.custom) {
+	if (pickedValue === CUSTOM_FOLDER_VALUE) {
 		return pickFolder(label, defaultValue);
 	}
 
-	return picked.value;
+	return pickedValue;
 }
 
 async function readSfdxPackageDirs(workspaceRoot: string): Promise<string[]> {

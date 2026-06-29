@@ -31,6 +31,7 @@ New to the codebase? Start here:
 - npm 8+
 - VS Code 1.88+
 - Salesforce CLI and jawn plugin installed locally:
+
   ```bash
   sf plugins install @syntax-syllogism/jawn
   ```
@@ -86,7 +87,9 @@ jawn-code-ext/
     input/                      # Input gathering (pickers, etc.)
       gatherInputs.ts          # Main input orchestrator
       orgPicker.ts             # Org selection picker
-      filePicker.ts            # File selection picker
+      defFilePicker.ts         # Workspace JSON definition-file picker
+      filePicker.ts            # Native file/folder picker helpers
+      workspaceQuickPick.ts    # Shared workspace-relative Quick Pick helper
       outputDirPicker.ts       # Directory selection picker
     registry/                  # Command definitions
       types.ts                 # TypeScript interfaces
@@ -139,6 +142,7 @@ A **Command** is a wrapper around a jawn CLI command. Each command has:
 - **title** — Display name in Command Palette
 - **flags** — Prompts to collect from the user
 - **group** — Sidebar category (User Lifecycle, AEP Generation)
+- **subgroup** — Sidebar nesting within a group (e.g. Pattern Layers, Selector Injection (AT4DX), Domain Processes (AT4DX))
 - **destructive** — Whether to use dry-run → confirm → apply workflow
 
 ### Flag Kinds
@@ -146,8 +150,8 @@ A **Command** is a wrapper around a jawn CLI command. Each command has:
 Flags can be of different **kinds**, which determine how they're presented to the user:
 
 - **org** — Salesforce org picker
-- **file** — File open dialog
-- **outputDir** — Directory picker
+- **file** - Workspace JSON Quick Pick filtered by Git ignore rules
+- **outputDir** - Quick Pick-first directory picker
 - **string** — Text input box
 - **enum** — Dropdown picker
 - **boolean** — Multi-select checkbox picker
@@ -190,6 +194,7 @@ Edit the maps in `scripts/gen-commands.ts`:
 - `placeholderByCommandFlag` — Example text
 - `summaryByCommandFlag` — Description
 - `flagOrder()` — Prompt order
+- `dependsOnFlagFor()` — Defer a flag until another is selected
 - `guiHiddenFlagsByCommand` — Hide certain flags
 
 Run `npm run gen:commands` after changes.
@@ -267,4 +272,4 @@ Open an issue on [GitHub](https://github.com/Syntax-Syllogism/jawn-vscode-extens
 
 ---
 
-**Last updated:** 2026-06-27
+**Last updated:** 2026-06-28

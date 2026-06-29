@@ -47,7 +47,7 @@ const groupById = new Map([
 // Only if this is an AEP command:
 const subgroupById = new Map([
   // ... existing
-  ['jawn my new command', 'Generators'],  // or 'Selector Helpers', 'Domain-Process Bindings'
+  ['jawn my new command', 'Pattern Layers'],  // or 'Selector Injection (AT4DX)', 'Domain Processes (AT4DX)'
 ]);
 ```
 
@@ -166,7 +166,7 @@ In `scripts/gen-commands.ts`, add to `placeholderByCommandFlag`:
 
 ```typescript
 const placeholderByCommandFlag = new Map([
-  ['*:user', 'myUser@email.com'],              // Any command
+  ['*:user', 'Username:myUser@email.com'],     // Any command
   ['jawn my command:fieldName', 'MyField__c'], // Specific command
 ]);
 ```
@@ -177,7 +177,7 @@ Add to `summaryByCommandFlag`:
 
 ```typescript
 const summaryByCommandFlag = new Map([
-  ['*:user', 'User value to match.'],                    // Wildcard
+  ['*:user', 'Target a single user as field:value (e.g. Username:user@example.com).'],  // Wildcard
   ['jawn user access:target', 'Object__c.Field__c'],    // Specific
 ]);
 ```
@@ -210,6 +210,29 @@ function exclusiveGroupFor(command: ManifestCommand, flagName: string): string |
 ```
 
 Then in `gatherInputs()`, these flags are displayed as a single-select Quick Pick.
+Give the group a human-readable prompt and per-option labels in
+`exclusiveGroupPresentation()` (`src/input/gatherInputs.ts`); without an entry it
+falls back to a generic `Choose <group>` prompt and `--flag` labels.
+
+### Deferred (dependent) Flags
+
+To defer a flag until a specific exclusive-group option is chosen, give it
+`dependsOnFlag` via `dependsOnFlagFor()`:
+
+```typescript
+function dependsOnFlagFor(command: ManifestCommand, flagName: string): string | undefined {
+  if (flagName === 'external-id' && /* command offers the userTarget choice */) {
+    return 'users-def';  // only prompt after --users-def is selected
+  }
+  return undefined;
+}
+```
+
+A dependent flag is skipped in the normal prompt sequence and gathered as a
+follow-up immediately after its target flag is selected inside the exclusive
+group. This is how `--external-id` stays out of the single-user (`--user`) path,
+where it has no meaning. If the dependent is `required` and left blank, the
+command aborts; otherwise a blank simply omits it.
 
 ### Hiding Flags
 
@@ -232,7 +255,7 @@ npm run gen:commands
 The tree view organization is defined in `src/tree/jawnCommandsProvider.ts`. It groups commands into:
 
 - **Groups** — Top-level (User Lifecycle, AEP Generation)
-- **Subgroups** — Nested under groups (Generators, Selector Helpers, Domain-Process Bindings)
+- **Subgroups** — Nested under groups (Pattern Layers, Selector Injection (AT4DX), Domain Processes (AT4DX))
 - **Commands** — Leaf nodes
 
 To change the structure, edit `orderedGroups()` and `orderedSubgroups()`:
@@ -296,6 +319,7 @@ Tests are in `src/test/extension.test.ts`. Add tests for new flag kinds, command
 ### Manual Testing
 
 1. Launch the Extension Development Host:
+
    ```bash
    npm run watch
    # In VS Code: Press F5 or Run → Start Debugging

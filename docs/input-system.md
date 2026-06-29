@@ -13,13 +13,23 @@ How the extension collects flag values from the user before running a Jawn CLI c
 | `flag.kind` | Picker called | Source file |
 |---|---|---|
 | `org` | `inputApi.pickOrg(lastValue)` | `src/input/orgPicker.ts` |
-| `file` | `inputApi.pickFile(label, lastValue)` | `src/input/filePicker.ts` |
+| `file` | `inputApi.pickDefFile(options)` | `src/input/defFilePicker.ts` |
 | `outputDir` | `inputApi.pickOutputDirectory(options)` | `src/input/outputDirPicker.ts` |
 | `enum` | `inputApi.showQuickPick(options)` | inline in `gatherFlag` |
 | `string` / `apiVersion` | `inputApi.showInputBox(options)` | inline in `gatherFlag` |
 | `boolean` | collected separately via `inputApi.showBooleanPick(...)` | inline in `gatherInputs` |
 
-Exclusive groups (e.g. `--at4dx` / `--fflib`) are gathered by `gatherExclusiveGroup(...)` before the per-flag loop, using `inputApi.showQuickPick`.
+Exclusive groups (e.g. `--at4dx` / `--fflib`, or `--user` / `--users-def`) are gathered by `gatherExclusiveGroup(...)` when the first group member is reached in the loop, using `inputApi.showQuickPick`. A flag carrying `dependsOnFlag` is skipped in the main loop and gathered as a follow-up right after its target flag is selected inside the group — for example `--external-id` is only prompted once `--users-def` is chosen, never in the single-user (`--user`) path.
+
+## Definition file picker (`file`)
+
+`pickDefFile` in `src/input/defFilePicker.ts` is the default picker for `file`-kind flags. It presents a workspace-scoped Quick Pick of `.json` files and does not offer a native OS file dialog fallback.
+
+Candidates are discovered with `vscode.workspace.findFiles('**/*.json', JSON_EXCLUDE_GLOB, 200)`, where the exclude glob skips noisy folders such as `.git`, `.sf`, `.sfdx`, `.vscode`, `node_modules`, `dist`, `out`, and `coverage`. The discovered workspace-relative paths are then filtered through `git check-ignore --stdin -z`, so files ignored by `.gitignore`, `.git/info/exclude`, or global git ignore rules are omitted. If Git is unavailable or the workspace is not a Git repository, the filter fails open and keeps the discovered candidates.
+
+The last-used value is stored as a workspace-relative file path. On the next run, the picker checks that the path still exists, is not a directory, remains inside the workspace, and is not ignored by Git. Valid last-used files are injected as the first Quick Pick item with description `Last used - <parent directory>`.
+
+Selected values are passed to the CLI as workspace-relative paths, for example `config/users.json`. Cancelling a required `file` prompt aborts the command; cancelling an optional non-exclusive `file` prompt skips that flag. Cancelling after choosing a member of an exclusive group, such as `Users definition file` in the `userTarget` group, aborts the command because the user has already committed to that targeting path.
 
 ## Output directory picker (`outputDir`)
 
@@ -31,9 +41,11 @@ Exclusive groups (e.g. `--at4dx` / `--fflib`) are gathered by `gatherExclusiveGr
 4. **Workspace child folders** — direct subdirectories of the workspace root that are not noise dirs (`.git`, `.sf`, `.sfdx`, `node_modules`, `dist`, `out`, `coverage`, `.vscode`), labelled `Workspace folder`.
 5. **Choose Different Folder...** — opens the native OS folder picker via `pickFolder(...)` from `src/input/filePicker.ts`, which enforces workspace-relative output and rejects out-of-workspace selections with a warning.
 
-Candidates are deduplicated by exact string value; the first label/description wins.
+Candidates are deduplicated through `showWorkspaceQuickPick(...)` in `src/input/workspaceQuickPick.ts`; the first label/description wins. On Windows, deduplication is case-insensitive.
 
 The picker returns a **workspace-relative path string** in all cases (or `undefined` on cancel). Candidate directories do not need to exist — the CLI flag allows non-existent output paths.
+
+`pickFolder(...)` in `src/input/filePicker.ts` remains the native folder-dialog helper used only by the output-directory custom fallback. `pickFile(...)` remains available for future specialized file prompts, but the generic `file` flag flow uses `pickDefFile(...)`.
 
 ## Adding a new flag kind
 
@@ -45,4 +57,6 @@ The picker returns a **workspace-relative path string** in all cases (or `undefi
 
 ## Last-value persistence
 
-`LastValueStore` (`src/util/memento.ts`) wraps a VS Code `Memento` and keys values by `(commandId, flagName)`. `gatherFlag` reads it before prompting and writes it after a successful pick. For `file`-kind flags the stored value is the directory of the picked file (via `directoryOf(...)`), so re-runs open in the same folder.
+`LastValueStore` (`src/util/memento.ts`) wraps a VS Code `Memento` and keys values by `(commandId, flagName)`. `gatherFlag` reads it before prompting and writes it after a successful pick.
+
+For `file`-kind flags, the stored value is the selected workspace-relative file path. Older memento values that point at directories or paths outside the workspace are treated as absent by `pickDefFile(...)`. For `outputDir` flags, the stored value is the selected workspace-relative directory path.

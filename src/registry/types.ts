@@ -8,6 +8,12 @@ export interface FlagDef {
 	options?: readonly string[];
 	placeholder?: string;
 	exclusiveGroup?: string;
+	/**
+	 * Only prompt for this flag once the named flag has been chosen. Used to defer
+	 * follow-up flags (e.g. `external-id`) until the exclusive-group option they
+	 * apply to (e.g. `users-def`) is selected.
+	 */
+	dependsOnFlag?: string;
 	default?: string;
 }
 

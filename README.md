@@ -12,7 +12,7 @@ Jawn is a VS Code extension for guided `@syntax-syllogism/jawn` Salesforce CLI w
   - `SF Jawn: User Freeze` (`sf jawn user freeze`)
   - `SF Jawn: User Unfreeze` (`sf jawn user unfreeze`)
 - AEP Generation commands:
-  - `SF Jawn: AEP Generate` (`sf jawn aep generate`)
+  - `SF Jawn: AEP Generate (Multiple)` (`sf jawn aep generate`)
   - `SF Jawn: AEP Generate Selector` (`sf jawn aep generate selector`)
   - `SF Jawn: AEP Generate Domain` (`sf jawn aep generate domain`)
   - `SF Jawn: AEP Generate Service` (`sf jawn aep generate service`)
@@ -23,11 +23,11 @@ Jawn is a VS Code extension for guided `@syntax-syllogism/jawn` Salesforce CLI w
   - `SF Jawn: AEP Generate Criteria` (`sf jawn aep generate criteria`)
 - Dedicated Jawn activity-bar view:
   - User Lifecycle commands remain flat.
-  - AEP commands are grouped into Generators, Selector Helpers, and Domain-Process Bindings.
+  - AEP commands are grouped into Pattern Layers, Selector Injection (AT4DX), and Domain Processes (AT4DX).
 - Guided native inputs:
   - Salesforce org picker with `jawn.defaultTargetOrg` fallback.
-  - File pickers for definition files.
-  - Folder picker for AEP `--output-path`.
+  - Workspace JSON Quick Pick for definition-file flags such as `--users-def` and `--personas-def`, with last-used files surfaced first.
+  - Quick Pick-first folder picker for AEP `--output-path`.
   - QuickPick enums for flags such as `--trigger-operation`.
   - Single-select QuickPick for mutually exclusive choices such as AEP flavor (`--at4dx` or `--fflib`) and user target (`--user` or `--users-def`).
   - Multi-select QuickPick for boolean options, including AEP `--dry-run` and aggregate artifact toggles.

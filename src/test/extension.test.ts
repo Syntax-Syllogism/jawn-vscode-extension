@@ -1,13 +1,15 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import * as vscode from 'vscode';
+import { pickDefFile, type PickDefFileOptions } from '../input/defFilePicker';
 import { pickFolder } from '../input/filePicker';
 import { gatherInputs, type BooleanPick, type InputApi, type PickOutputDirectoryOptions } from '../input/gatherInputs';
 import { pickOutputDirectory } from '../input/outputDirPicker';
+import { showWorkspaceQuickPick } from '../input/workspaceQuickPick';
 import { prioritizeOrgChoices } from '../input/orgPicker';
 import { commands } from '../registry/commands.generated';
 import type { CommandDef } from '../registry/types';
@@ -45,7 +47,7 @@ suite('Jawn extension', () => {
 	test('AEP registry captures required input metadata', () => {
 		const aepGenerate = commandById('jawn.aep.generate');
 		assert.strictEqual(aepGenerate.group, 'AEP Generation');
-		assert.strictEqual(aepGenerate.subgroup, 'Generators');
+		assert.strictEqual(aepGenerate.subgroup, 'Pattern Layers');
 		assert.deepStrictEqual(aepGenerate.requireOneOf, ['selector', 'domain', 'unit-of-work']);
 		assert.strictEqual(aepGenerate.flags.find((flag) => flag.name === 'at4dx')?.exclusiveGroup, 'flavor');
 		assert.strictEqual(aepGenerate.flags.find((flag) => flag.name === 'fflib')?.exclusiveGroup, 'flavor');
@@ -87,13 +89,16 @@ suite('Jawn extension', () => {
 		assert.deepStrictEqual(generatedPackage.contributes.commands, currentPackage.contributes.commands);
 	});
 
-	test('gatherInputs builds argv from native picker responses and skips blank optionals', async () => {
+	test('gatherInputs builds argv from definition file picker responses and skips blank optionals', async () => {
 		const command = commandById('jawn.user.provision');
 		const store = new LastValueStore(new MemoryMemento());
-		let filePickCount = 0;
+		let defFilePickCount = 0;
 		const inputApi: InputApi = {
 			pickOrg: async () => 'scratch',
-			pickFile: async () => filePickCount++ === 0 ? '/repo/users.json' : '/repo/personas.json',
+			pickFile: async () => {
+				throw new Error('native file picker should not be used for definition files');
+			},
+			pickDefFile: async () => defFilePickCount++ === 0 ? 'config/users.json' : 'config/personas.json',
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async () => '',
@@ -106,10 +111,77 @@ suite('Jawn extension', () => {
 
 		assert.deepStrictEqual(result?.args, [
 			'--target-org', 'scratch',
-			'--users-def', '/repo/users.json',
-			'--personas-def', '/repo/personas.json',
+			'--users-def', 'config/users.json',
+			'--personas-def', 'config/personas.json',
 			'--dry-run',
 		]);
+	});
+
+	test('gatherInputs aborts when a required definition file prompt is cancelled', async () => {
+		const command = commandById('jawn.user.provision');
+		const store = new LastValueStore(new MemoryMemento());
+		const inputApi: InputApi = {
+			pickOrg: async () => 'scratch',
+			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
+			pickFolder: async () => undefined,
+			pickOutputDirectory: async () => undefined,
+			showInputBox: async () => '',
+			showQuickPick: async () => undefined,
+			showBooleanPick: async () => [],
+			showWarningMessage: async () => undefined,
+		};
+
+		assert.strictEqual(await gatherInputs(command, store, inputApi), undefined);
+	});
+
+	test('gatherInputs aborts when an exclusive-group definition file prompt is cancelled', async () => {
+		const command = commandById('jawn.user.freeze');
+		const store = new LastValueStore(new MemoryMemento());
+		const inputApi: InputApi = {
+			pickOrg: async () => 'dev',
+			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
+			pickFolder: async () => undefined,
+			pickOutputDirectory: async () => undefined,
+			showInputBox: async (options) => options.prompt?.includes('match users') ? 'Username' : '',
+			showQuickPick: async (items) => items.find((item) => item.label === 'Users definition file'),
+			showBooleanPick: async () => [],
+			showWarningMessage: async () => undefined,
+		};
+
+		assert.strictEqual(await gatherInputs(command, store, inputApi), undefined);
+	});
+
+	test('gatherInputs passes last-used definition file and stores the selected relative path', async () => {
+		const command = commandById('jawn.user.strip');
+		const store = new LastValueStore(new MemoryMemento());
+		await store.set(command.id, 'users-def', 'config/previous-users.json');
+		const receivedOptions: PickDefFileOptions[] = [];
+		const inputApi: InputApi = {
+			pickOrg: async () => 'dev',
+			pickFile: async () => undefined,
+			pickDefFile: async (options) => {
+				receivedOptions.push(options);
+				return 'config/current-users.json';
+			},
+			pickFolder: async () => undefined,
+			pickOutputDirectory: async () => undefined,
+			showInputBox: async (options) => options.prompt?.includes('match users') ? 'Username' : '',
+			showQuickPick: async (items) => items.find((item) => item.label === 'Users definition file'),
+			showBooleanPick: async () => [],
+			showWarningMessage: async () => undefined,
+		};
+
+		const result = await gatherInputs(command, store, inputApi);
+
+		assert.deepStrictEqual(result?.args, [
+			'--users-def', 'config/current-users.json',
+			'--external-id', 'Username',
+			'--target-org', 'dev',
+		]);
+		assert.strictEqual(receivedOptions[0].lastValue, 'config/previous-users.json');
+		assert.strictEqual(store.get(command.id, 'users-def'), 'config/current-users.json');
 	});
 
 	test('gatherInputs uses verified access flags without prompting for dead output mode', async () => {
@@ -125,6 +197,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async (options) => options.prompt?.includes('Target API name') ? 'Account.Name' : '',
@@ -149,6 +222,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => undefined,
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async () => 'Account.Name',
@@ -198,12 +272,155 @@ suite('Jawn extension', () => {
 		assert.deepStrictEqual(warnings, ['Choose a folder inside the current workspace.']);
 	});
 
+	test('showWorkspaceQuickPick injects last-used first, deduplicates, and returns undefined on cancel', async () => {
+		const capturedItems: vscode.QuickPickItem[][] = [];
+		await withQuickPick((items) => {
+			capturedItems.push([...items]);
+			return items[0];
+		}, async () => {
+			const result = await showWorkspaceQuickPick({
+				items: [
+					{ label: 'users.json', value: 'config/users.json' },
+					{ label: 'users duplicate', value: 'config/users.json' },
+					{ label: 'personas.json', value: 'config/personas.json' },
+				],
+				lastValue: 'config/users.json',
+				placeHolder: 'Pick JSON',
+			});
+			assert.strictEqual(result, 'config/users.json');
+		});
+
+		assert.deepStrictEqual(capturedItems[0].map((item) => (item as unknown as { value: string }).value), [
+			'config/users.json',
+			'config/personas.json',
+		]);
+
+		await withQuickPick(() => undefined, async () => {
+			const result = await showWorkspaceQuickPick({
+				items: [{ label: 'users.json', value: 'config/users.json' }],
+				placeHolder: 'Pick JSON',
+			});
+			assert.strictEqual(result, undefined);
+		});
+	});
+
+	test('pickDefFile offers discovered workspace JSON files and returns a relative path', async () => {
+		const command = commandById('jawn.user.provision');
+		const flag = command.flags.find((f) => f.name === 'users-def')!;
+		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-test-'));
+		mkdirSync(join(tempDir, 'config'));
+		mkdirSync(join(tempDir, 'data'));
+		writeFileSync(join(tempDir, 'config', 'users.json'), '{}');
+		writeFileSync(join(tempDir, 'data', 'personas.json'), '{}');
+		const capturedItems: vscode.QuickPickItem[][] = [];
+
+		await withWorkspaceFolders([tempDir], async () => {
+			await withFindFiles([
+				vscode.Uri.file(join(tempDir, 'data', 'personas.json')),
+				vscode.Uri.file(join(tempDir, 'config', 'users.json')),
+			], async () => {
+				await withQuickPick((items) => {
+					capturedItems.push([...items]);
+					return items.find((item) => (item as unknown as { value: string }).value === 'data/personas.json');
+				}, async () => {
+					const result = await pickDefFile({ flag, label: 'Path to user definition JSON file.' });
+					assert.strictEqual(result, 'data/personas.json');
+				});
+			});
+		});
+
+		assert.deepStrictEqual(capturedItems[0].map((item) => (item as unknown as { value: string }).value), [
+			'config/users.json',
+			'data/personas.json',
+		]);
+		assert.strictEqual(capturedItems[0][0].label, 'users.json');
+		assert.strictEqual(capturedItems[0][0].description, 'config');
+	});
+
+	test('pickDefFile filters JSON files ignored by git', async () => {
+		const command = commandById('jawn.user.provision');
+		const flag = command.flags.find((f) => f.name === 'users-def')!;
+		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-test-'));
+		mkdirSync(join(tempDir, 'config'));
+		mkdirSync(join(tempDir, 'ignored'));
+		writeFileSync(join(tempDir, '.gitignore'), 'ignored/**\n');
+		writeFileSync(join(tempDir, 'config', 'users.json'), '{}');
+		writeFileSync(join(tempDir, 'ignored', 'users.json'), '{}');
+		execFileSync('git', ['init'], { cwd: tempDir });
+		const capturedItems: vscode.QuickPickItem[][] = [];
+
+		await withWorkspaceFolders([tempDir], async () => {
+			await withFindFiles([
+				vscode.Uri.file(join(tempDir, 'ignored', 'users.json')),
+				vscode.Uri.file(join(tempDir, 'config', 'users.json')),
+			], async () => {
+				await withQuickPick((items) => {
+					capturedItems.push([...items]);
+					return undefined;
+				}, async () => {
+					await pickDefFile({ flag, label: 'Path to user definition JSON file.', lastValue: 'ignored/users.json' });
+				});
+			});
+		});
+
+		assert.deepStrictEqual(capturedItems[0].map((item) => (item as unknown as { value: string }).value), ['config/users.json']);
+	});
+
+	test('pickDefFile puts an existing last-used file first and deduplicates discovered matches', async () => {
+		const command = commandById('jawn.user.provision');
+		const flag = command.flags.find((f) => f.name === 'users-def')!;
+		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-test-'));
+		mkdirSync(join(tempDir, 'config'));
+		writeFileSync(join(tempDir, 'config', 'users.json'), '{}');
+		writeFileSync(join(tempDir, 'config', 'personas.json'), '{}');
+		const capturedItems: vscode.QuickPickItem[][] = [];
+
+		await withWorkspaceFolders([tempDir], async () => {
+			await withFindFiles([
+				vscode.Uri.file(join(tempDir, 'config', 'personas.json')),
+				vscode.Uri.file(join(tempDir, 'config', 'users.json')),
+			], async () => {
+				await withQuickPick((items) => {
+					capturedItems.push([...items]);
+					return undefined;
+				}, async () => {
+					await pickDefFile({ flag, label: 'Path to user definition JSON file.', lastValue: 'config/users.json' });
+				});
+			});
+		});
+
+		const values = capturedItems[0].map((item) => (item as unknown as { value: string }).value);
+		assert.deepStrictEqual(values, ['config/users.json', 'config/personas.json']);
+		assert.strictEqual(capturedItems[0][0].description, 'Last used • config');
+	});
+
+	test('pickDefFile silently omits a missing last-used file', async () => {
+		const command = commandById('jawn.user.provision');
+		const flag = command.flags.find((f) => f.name === 'users-def')!;
+		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-test-'));
+		mkdirSync(join(tempDir, 'config'));
+		writeFileSync(join(tempDir, 'config', 'users.json'), '{}');
+		const capturedItems: vscode.QuickPickItem[][] = [];
+
+		await withWorkspaceFolders([tempDir], async () => {
+			await withFindFiles([vscode.Uri.file(join(tempDir, 'config', 'users.json'))], async () => {
+				await withQuickPick((items) => {
+					capturedItems.push([...items]);
+					return undefined;
+				}, async () => {
+					await pickDefFile({ flag, label: 'Path to user definition JSON file.', lastValue: 'config/missing.json' });
+				});
+			});
+		});
+
+		assert.deepStrictEqual(capturedItems[0].map((item) => item.description), ['config']);
+	});
+
 	test('gatherInputs enforces user-or-users-def targeting as a single choice', async () => {
 		const command = commandById('jawn.user.freeze');
-		assert.deepStrictEqual(command.flags.slice(0, 2).map((flag) => flag.name), ['external-id', 'user']);
 		const userFlag = command.flags.find((flag) => flag.name === 'user');
-		assert.strictEqual(userFlag?.placeholder, 'myUser@email.com');
-		assert.strictEqual(userFlag?.summary, 'User value to match.');
+		assert.strictEqual(userFlag?.placeholder, 'Username:myUser@email.com');
+		assert.strictEqual(userFlag?.summary, 'Target a single user as field:value (e.g. Username:user@example.com).');
 
 		const store = new LastValueStore(new MemoryMemento());
 		const inputApi: InputApi = {
@@ -211,14 +428,17 @@ suite('Jawn extension', () => {
 			pickFile: async () => {
 				throw new Error('file picker should not be used for single-user targeting');
 			},
+			pickDefFile: async () => {
+				throw new Error('definition file picker should not be used for single-user targeting');
+			},
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async (options) => {
-				if (options.prompt?.includes('Default User field')) {
-					return 'Username';
+				if (options.prompt?.includes('match users')) {
+					throw new Error('external-id should not be prompted for single-user targeting');
 				}
 
-				return options.prompt?.includes('User value') ? 'myUser@email.com' : '';
+				return options.prompt?.includes('single user') ? 'Username:myUser@email.com' : '';
 			},
 			showQuickPick: async (items) => items[0],
 			showBooleanPick: async () => [],
@@ -228,8 +448,7 @@ suite('Jawn extension', () => {
 		const result = await gatherInputs(command, store, inputApi);
 
 		assert.deepStrictEqual(result?.args, [
-			'--external-id', 'Username',
-			'--user', 'myUser@email.com',
+			'--user', 'Username:myUser@email.com',
 			'--target-org', 'dev',
 		]);
 	});
@@ -240,6 +459,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async (options) => options.prompt?.includes('SObject') ? 'Account' : '',
@@ -260,6 +480,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async (options) => options.prompt?.includes('SObject') ? 'Account' : '',
@@ -277,6 +498,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => 'force-app',
 			showInputBox: async (options) => options.prompt?.includes('SObject') ? 'Account' : '',
@@ -311,6 +533,7 @@ suite('Jawn extension', () => {
 				return 'dev';
 			},
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async () => {
@@ -346,6 +569,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => undefined,
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async () => inputCount++ === 0 ? 'Billing' : '',
@@ -368,6 +592,7 @@ suite('Jawn extension', () => {
 		const baseInputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => undefined,
 			showInputBox: async (options) => options.prompt?.includes('SObject') ? 'Account' : '',
@@ -632,6 +857,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async (opts) => {
 				receivedOptions.push(opts);
@@ -657,6 +883,7 @@ suite('Jawn extension', () => {
 		const inputApi: InputApi = {
 			pickOrg: async () => 'dev',
 			pickFile: async () => undefined,
+			pickDefFile: async () => undefined,
 			pickFolder: async () => undefined,
 			pickOutputDirectory: async () => 'custom-output',
 			showInputBox: async (options) => options.prompt?.includes('SObject') ? 'Account' : '',
@@ -884,7 +1111,7 @@ suite('Jawn extension', () => {
 		const aep = groups[1];
 		assert.strictEqual(aep.type, 'group');
 		const subgroups = provider.getChildren(aep);
-		assert.deepStrictEqual(subgroups.map((node) => node.type === 'subgroup' ? node.label : ''), ['Generators', 'Selector Helpers', 'Domain-Process Bindings']);
+		assert.deepStrictEqual(subgroups.map((node) => node.type === 'subgroup' ? node.label : ''), ['Pattern Layers', 'Selector Injection (AT4DX)', 'Domain Processes (AT4DX)']);
 
 		const generators = subgroups[0];
 		assert.strictEqual(generators.type, 'subgroup');
@@ -928,6 +1155,16 @@ async function withOpenDialog(result: readonly vscode.Uri[] | undefined, task: (
 		await task();
 	} finally {
 		vscode.window.showOpenDialog = original;
+	}
+}
+
+async function withFindFiles(result: readonly vscode.Uri[], task: () => Promise<void>): Promise<void> {
+	const original = vscode.workspace.findFiles;
+	(vscode.workspace as unknown as { findFiles: unknown }).findFiles = async () => result;
+	try {
+		await task();
+	} finally {
+		(vscode.workspace as unknown as { findFiles: unknown }).findFiles = original;
 	}
 }
 

@@ -18,6 +18,7 @@ npm run gen:commands -- vendor/jawn.oclif.manifest.json src/registry/commands.ge
 ```
 
 This script:
+
 1. Parses the oclif manifest (JSON)
 2. Filters to whitelisted commands (see `allowList`)
 3. Extracts flags and infers UI metadata
@@ -51,6 +52,7 @@ interface FlagDef {
   options?: string[];           // For enum kind: allowed values
   placeholder?: string;         // For string/file kinds: example text
   exclusiveGroup?: string;      // Mutually exclusive group name
+  dependsOnFlag?: string;       // Only prompt once the named flag has been chosen
   default?: string;             // Default value
 }
 ```
@@ -62,7 +64,7 @@ The UI presentation of each flag is determined by its `kind`:
 | Kind | Picker | Use case |
 |------|--------|----------|
 | `org` | Org picker with cached value | `--target-org` |
-| `file` | File open dialog | Definition files like `--users-def`, `--object-list` |
+| `file` | Workspace JSON Quick Pick, filtered by Git ignore rules | Definition files like `--users-def`, `--personas-def`, `--object-list` |
 | `outputDir` | Directory picker (Quick Pick + fallback to native dialog) | `--output-path` for generated files |
 | `string` | Text input box | Names, prefixes, class names, email addresses |
 | `apiVersion` | Text input box with version number validation | `--api-version` |
@@ -117,8 +119,9 @@ Some flags are mutually exclusive and grouped for single-select UI:
   - Only one can be selected
 
 - **`userTarget`** — Flags: `--user`, `--users-def`
-  - Used to select how users are specified
+  - Used to select how users are specified: a single user (`field:value`) or a JSON definition file
   - Only one can be selected
+  - `--external-id` depends on this choice (see Flag Ordering): it is only prompted when `--users-def` is selected, since it sets the default match field for definition-file entries
 
 ### Hidden Flags
 
@@ -143,15 +146,26 @@ Flags are prompted in this order:
 Order rules apply per-command to important flags first:
 
 - For `jawn user strip`, `jawn user freeze`, `jawn user unfreeze`:
-  - `--external-id` (first)
-  - `--user` (second)
-  - Rest in order
+  - `--user` is ordered first so the `userTarget` choice (single user vs. definition file) is surfaced before `--target-org`
+  - Rest in manifest order
+
+`--external-id` carries `dependsOnFlag: 'users-def'`, so it is skipped in the normal
+sequence and only prompted after `--users-def` is selected in the `userTarget` group.
+Single-user targeting never prompts for it. See [Deferred (dependent) flags](#deferred-dependent-flags).
+
+### Deferred (dependent) flags
+
+A flag with `dependsOnFlag: '<other-flag>'` is not prompted in the normal sequence.
+Instead, it is gathered as a follow-up immediately after `<other-flag>` is selected
+inside its exclusive group. This is how `--external-id` is deferred until the
+`--users-def` branch of the `userTarget` choice is taken, keeping it out of the
+single-user path where it is meaningless.
 
 ### Placeholders
 
 Input boxes show placeholder text to guide the user:
 
-- `*:user` → `myUser@email.com` (any command)
+- `*:user` → `Username:myUser@email.com` (any command; `--user` takes `field:value`)
 - `jawn user access:target` → `Object__c.Field__c` (specific command)
 
 Placeholders are defined as `placeholderByCommandFlag` map and can be extended.
@@ -198,6 +212,7 @@ Edit the maps in `scripts/gen-commands.ts`:
 - `summaryByCommandFlag` — Description text for pickers
 - `guiHiddenFlagsByCommand` — Flags to exclude from UI
 - `flavorFlags`, `userTargetFlags` — Exclusive flag groups
+- `dependsOnFlagFor()` — Defer a flag until another is selected (e.g. `--external-id` after `--users-def`)
 - Flag ordering in `flagOrder()`
 
 After editing, run `npm run gen:commands` to update.
@@ -223,8 +238,8 @@ Here's how `jawn user provision` looks after generation:
     {
       name: 'user',
       kind: 'string',
-      placeholder: 'myUser@email.com',
-      summary: 'User value to match.',
+      placeholder: 'Username:myUser@email.com',
+      summary: 'Target a single user as field:value (e.g. Username:user@example.com).',
     },
     {
       name: 'firstName',
@@ -237,6 +252,7 @@ Here's how `jawn user provision` looks after generation:
 ```
 
 When this is executed, the extension:
+
 1. Prompts for each flag in order (org, user, firstName, ...)
 2. Builds args: `['jawn', 'user', 'provision', '--target-org=my-org', '--user=test@example.com', ...]`
 3. Adds internal flag: `--no-prompt` (because `supportsNoPrompt: true`)

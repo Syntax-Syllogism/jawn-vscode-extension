@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { directoryOf, pickFile, pickFolder } from './filePicker';
+import { pickDefFile, type PickDefFileOptions } from './defFilePicker';
+import { pickFile, pickFolder } from './filePicker';
 import { pickOrg } from './orgPicker';
 import { pickOutputDirectory, type PickOutputDirectoryOptions } from './outputDirPicker';
 import type { CommandDef, FlagDef } from '../registry/types';
@@ -13,6 +14,7 @@ export interface GatheredInputs {
 export interface InputApi {
 	pickOrg(lastValue?: string): Promise<string | undefined>;
 	pickFile(label: string, defaultDirectory?: string): Promise<string | undefined>;
+	pickDefFile(options: PickDefFileOptions): Promise<string | undefined>;
 	pickFolder(label: string, defaultDirectory?: string): Promise<string | undefined>;
 	pickOutputDirectory(options: PickOutputDirectoryOptions): Promise<string | undefined>;
 	showInputBox(options: vscode.InputBoxOptions): Thenable<string | undefined>;
@@ -22,6 +24,7 @@ export interface InputApi {
 }
 
 export type { PickOutputDirectoryOptions };
+export type { PickDefFileOptions };
 
 export interface BooleanPick extends vscode.QuickPickItem {
 	flag: FlagDef;
@@ -31,6 +34,7 @@ export function createVsCodeInputApi(): InputApi {
 	return {
 		pickOrg,
 		pickFile,
+		pickDefFile,
 		pickFolder,
 		pickOutputDirectory,
 		showInputBox: (options) => vscode.window.showInputBox(options),
@@ -72,7 +76,13 @@ async function gatherNamedFlags(
 	const gathered: GatheredInputs = { args: [], displayArgs: [] };
 	const exclusiveGroups = groupExclusiveFlags(flags);
 	const handledExclusiveGroups = new Set<string>();
+	const dependentFlags = flags.filter((flag) => flag.dependsOnFlag);
 	for (const flag of flags) {
+		if (flag.dependsOnFlag) {
+			// Gathered as a follow-up once its target flag is selected, not here.
+			continue;
+		}
+
 		if (flag.exclusiveGroup && handledExclusiveGroups.has(flag.exclusiveGroup)) {
 			continue;
 		}
@@ -80,7 +90,7 @@ async function gatherNamedFlags(
 		if (flag.exclusiveGroup) {
 			handledExclusiveGroups.add(flag.exclusiveGroup);
 			const groupFlags = exclusiveGroups.get(flag.exclusiveGroup) ?? [];
-			const groupGathered = await gatherExclusiveGroup(command, flag.exclusiveGroup, groupFlags, store, inputApi);
+			const groupGathered = await gatherExclusiveGroup(command, flag.exclusiveGroup, groupFlags, dependentFlags, store, inputApi);
 			if (!groupGathered) {
 				return undefined;
 			}
@@ -150,6 +160,7 @@ async function gatherExclusiveGroup(
 	command: CommandDef,
 	groupName: string,
 	groupFlags: readonly FlagDef[],
+	dependentFlags: readonly FlagDef[],
 	store: LastValueStore,
 	inputApi: InputApi,
 ): Promise<GatheredInputs | undefined> {
@@ -162,14 +173,52 @@ async function gatherExclusiveGroup(
 		return undefined;
 	}
 
+	const gathered: GatheredInputs = { args: [], displayArgs: [] };
 	if (picked.flag.kind === 'boolean') {
-		return {
+		appendGatheredInputs(gathered, {
 			args: [`--${picked.flag.name}`],
 			displayArgs: [`--${picked.flag.name}`],
-		};
+		});
+	} else {
+		const pickedGathered = await gatherFlag(command, picked.flag, store, inputApi);
+		if (!pickedGathered) {
+			return undefined;
+		}
+
+		appendGatheredInputs(gathered, pickedGathered);
 	}
 
-	return gatherFlag(command, picked.flag, store, inputApi);
+	if (!await gatherDependentFlags(command, picked.flag.name, dependentFlags, gathered, store, inputApi)) {
+		return undefined;
+	}
+
+	return gathered;
+}
+
+async function gatherDependentFlags(
+	command: CommandDef,
+	selectedFlagName: string,
+	dependentFlags: readonly FlagDef[],
+	gathered: GatheredInputs,
+	store: LastValueStore,
+	inputApi: InputApi,
+): Promise<boolean> {
+	for (const dependent of dependentFlags) {
+		if (dependent.dependsOnFlag !== selectedFlagName) {
+			continue;
+		}
+
+		const dependentGathered = await gatherFlag(command, dependent, store, inputApi);
+		if (!dependentGathered && dependent.required) {
+			return false;
+		}
+
+		if (dependentGathered) {
+			appendGatheredInputs(gathered, dependentGathered);
+		}
+	}
+
+	return true;
 }
 
 async function gatherFlag(
@@ -184,10 +233,11 @@ async function gatherFlag(
 	if (flag.kind === 'org') {
 		value = await inputApi.pickOrg(lastValue);
 	} else if (flag.kind === 'file') {
-		value = await inputApi.pickFile(flag.summary ?? `Select --${flag.name}`, lastValue);
-		if (value) {
-			await store.set(command.id, flag.name, directoryOf(value));
-		}
+		value = await inputApi.pickDefFile({
+			flag,
+			label: flag.summary ?? `Select --${flag.name}`,
+			lastValue,
+		});
 	} else if (flag.kind === 'outputDir') {
 		value = await inputApi.pickOutputDirectory({
 			command,

@@ -61,7 +61,9 @@ Tests stub VS Code interfaces to avoid UI interactions:
 ```typescript
 const mockInputApi = {
   pickOrg: async () => 'my-org',
-  pickFile: async () => '/path/to/file',
+  pickFile: async () => undefined,  // Retained for specialized native file prompts
+  pickDefFile: async () => 'config/users.json',
+  pickOutputDirectory: async () => 'generated-files',
   showQuickPick: async (options) => options.items[0],
   showInputBox: async (options) => 'user input',
   showBooleanPick: async (options) => [],
@@ -176,19 +178,23 @@ it('should prompt for org with pickOrg', async () => {
 ### File Kind
 
 ```typescript
-it('should prompt for file with pickFile', async () => {
+it('should prompt for a workspace definition file with pickDefFile', async () => {
   const mockInputApi = {
-    pickFile: async (label, lastValue) => {
-      expect(label).toBe('Users definition file');
-      return '/workspace/users.csv';
+    pickDefFile: async (options) => {
+      expect(options.label).toBe('Path to user definition JSON file.');
+      expect(options.lastValue).toBe(undefined);
+      return 'config/users.json';
     },
     // ...
   };
   
   const inputs = await gatherInputs(command, store, mockInputApi);
-  expect(inputs.args).toContain('--users-def=/workspace/users.csv');
+  expect(inputs.args).toContain('--users-def');
+  expect(inputs.args).toContain('config/users.json');
 });
 ```
+
+Definition-file tests should cover Quick Pick selection, cancellation, last-used paths, `.gitignore` filtering, and deduplication. The production picker returns workspace-relative JSON paths and intentionally does not open the native OS file dialog.
 
 ### OutputDir Kind
 

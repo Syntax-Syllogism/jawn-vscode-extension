@@ -94,6 +94,7 @@ sf jawn user provision exited with code 0
 ```
 
 The Output Channel is automatically shown if:
+
 - A command starts (via `output.show(true)`)
 - An error occurs
 - A destructive preview begins

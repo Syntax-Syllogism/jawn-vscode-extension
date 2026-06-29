@@ -78,15 +78,10 @@ export const commands: readonly CommandDef[] = [
 		"destructive": true,
 		"flags": [
 			{
-				"name": "external-id",
-				"kind": "string",
-				"summary": "Default User field used to match entries in `--users-def`."
-			},
-			{
 				"name": "user",
 				"kind": "string",
-				"summary": "User value to match.",
-				"placeholder": "myUser@email.com",
+				"summary": "Target a single user as field:value (e.g. Username:user@example.com).",
+				"placeholder": "Username:myUser@email.com",
 				"exclusiveGroup": "userTarget"
 			},
 			{
@@ -100,6 +95,12 @@ export const commands: readonly CommandDef[] = [
 				"kind": "file",
 				"summary": "Path to a user definition JSON file.",
 				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "external-id",
+				"kind": "string",
+				"summary": "Default field used to match users in the definition file.",
+				"dependsOnFlag": "users-def"
 			},
 			{
 				"name": "dry-run",
@@ -151,15 +152,10 @@ export const commands: readonly CommandDef[] = [
 		"supportsNoPrompt": true,
 		"flags": [
 			{
-				"name": "external-id",
-				"kind": "string",
-				"summary": "Default User field used to match entries in `--users-def`."
-			},
-			{
 				"name": "user",
 				"kind": "string",
-				"summary": "User value to match.",
-				"placeholder": "myUser@email.com",
+				"summary": "Target a single user as field:value (e.g. Username:user@example.com).",
+				"placeholder": "Username:myUser@email.com",
 				"exclusiveGroup": "userTarget"
 			},
 			{
@@ -173,6 +169,12 @@ export const commands: readonly CommandDef[] = [
 				"kind": "file",
 				"summary": "Path to a user definition JSON file.",
 				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "external-id",
+				"kind": "string",
+				"summary": "Default field used to match users in the definition file.",
+				"dependsOnFlag": "users-def"
 			},
 			{
 				"name": "dry-run",
@@ -189,15 +191,10 @@ export const commands: readonly CommandDef[] = [
 		"supportsNoPrompt": true,
 		"flags": [
 			{
-				"name": "external-id",
-				"kind": "string",
-				"summary": "Default User field used to match entries in `--users-def`."
-			},
-			{
 				"name": "user",
 				"kind": "string",
-				"summary": "User value to match.",
-				"placeholder": "myUser@email.com",
+				"summary": "Target a single user as field:value (e.g. Username:user@example.com).",
+				"placeholder": "Username:myUser@email.com",
 				"exclusiveGroup": "userTarget"
 			},
 			{
@@ -213,6 +210,12 @@ export const commands: readonly CommandDef[] = [
 				"exclusiveGroup": "userTarget"
 			},
 			{
+				"name": "external-id",
+				"kind": "string",
+				"summary": "Default field used to match users in the definition file.",
+				"dependsOnFlag": "users-def"
+			},
+			{
 				"name": "dry-run",
 				"kind": "boolean",
 				"summary": "Validate and plan actions without any write operations."
@@ -222,9 +225,9 @@ export const commands: readonly CommandDef[] = [
 	{
 		"id": "jawn.aep.generate",
 		"cliId": "jawn aep generate",
-		"title": "SF Jawn: AEP Generate",
+		"title": "SF Jawn: AEP Generate (Multiple)",
 		"group": "AEP Generation",
-		"subgroup": "Generators",
+		"subgroup": "Pattern Layers",
 		"requireOneOf": [
 			"selector",
 			"domain",
@@ -298,7 +301,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate selector",
 		"title": "SF Jawn: AEP Generate Selector",
 		"group": "AEP Generation",
-		"subgroup": "Generators",
+		"subgroup": "Pattern Layers",
 		"flags": [
 			{
 				"name": "target-org",
@@ -347,7 +350,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate domain",
 		"title": "SF Jawn: AEP Generate Domain",
 		"group": "AEP Generation",
-		"subgroup": "Generators",
+		"subgroup": "Pattern Layers",
 		"flags": [
 			{
 				"name": "target-org",
@@ -396,7 +399,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate service",
 		"title": "SF Jawn: AEP Generate Service",
 		"group": "AEP Generation",
-		"subgroup": "Generators",
+		"subgroup": "Pattern Layers",
 		"flags": [
 			{
 				"name": "target-org",
@@ -444,7 +447,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate unitofwork",
 		"title": "SF Jawn: AEP Generate Unit of Work",
 		"group": "AEP Generation",
-		"subgroup": "Generators",
+		"subgroup": "Pattern Layers",
 		"flags": [
 			{
 				"name": "target-org",
@@ -498,7 +501,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate selector method",
 		"title": "SF Jawn: AEP Selector Method",
 		"group": "AEP Generation",
-		"subgroup": "Selector Helpers",
+		"subgroup": "Selector Injection (AT4DX)",
 		"flags": [
 			{
 				"name": "sobject",
@@ -536,7 +539,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate selector field-injection",
 		"title": "SF Jawn: AEP Selector Field Injection",
 		"group": "AEP Generation",
-		"subgroup": "Selector Helpers",
+		"subgroup": "Selector Injection (AT4DX)",
 		"flags": [
 			{
 				"name": "sobject",
@@ -583,7 +586,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate action",
 		"title": "SF Jawn: AEP Generate Action",
 		"group": "AEP Generation",
-		"subgroup": "Domain-Process Bindings",
+		"subgroup": "Domain Processes (AT4DX)",
 		"flags": [
 			{
 				"name": "sobject",
@@ -594,7 +597,7 @@ export const commands: readonly CommandDef[] = [
 			{
 				"name": "class-name",
 				"kind": "string",
-				"summary": "Selector method-injection class name.",
+				"summary": "Action class name to generate.",
 				"required": true
 			},
 			{
@@ -644,7 +647,7 @@ export const commands: readonly CommandDef[] = [
 		"cliId": "jawn aep generate criteria",
 		"title": "SF Jawn: AEP Generate Criteria",
 		"group": "AEP Generation",
-		"subgroup": "Domain-Process Bindings",
+		"subgroup": "Domain Processes (AT4DX)",
 		"flags": [
 			{
 				"name": "sobject",
@@ -655,7 +658,7 @@ export const commands: readonly CommandDef[] = [
 			{
 				"name": "class-name",
 				"kind": "string",
-				"summary": "Selector method-injection class name.",
+				"summary": "Criteria class name to generate.",
 				"required": true
 			},
 			{

@@ -56,7 +56,8 @@ See [command-runner.md](command-runner.md) for details.
 
 - Implements VS Code's `TreeDataProvider<JawnNode>` interface.
 - Organizes commands into collapsible groups: User Lifecycle, AEP Generation.
-- AEP commands are further nested by subgroup: Generators, Selector Helpers, Domain-Process Bindings.
+- AEP commands are further nested by subgroup: Pattern Layers, Selector Injection (AT4DX), Domain Processes (AT4DX).
+- Group, subgroup, and command order are derived from the registry order (the single source of truth, driven by the allow-list in `scripts/gen-commands.ts`) — there is no separately maintained ordering list.
 - Each command node has a clickable handler that triggers the command.
 
 ### ANSI Output Handler (`src/runner/ansi.ts`)
@@ -68,7 +69,7 @@ See [command-runner.md](command-runner.md) for details.
 
 - `LastValueStore` wraps VS Code's Memento API.
 - Stores the last value for each (commandId, flagName) pair.
-- For file-kind flags, stores the directory path so future pickers open in the same location.
+- For file-kind flags, stores the workspace-relative file path so future Quick Picks can surface the exact last-used definition file.
 
 ## Data Flow Diagram
 
@@ -113,6 +114,7 @@ All event listeners and resources are registered into `context.subscriptions`, e
 ### Input API Abstraction
 
 The `InputApi` interface decouples business logic from VS Code UI, enabling:
+
 - Easy testing with stub implementations
 - Potential future support for other UI frameworks
 - Clear separation of concerns
@@ -120,6 +122,7 @@ The `InputApi` interface decouples business logic from VS Code UI, enabling:
 ### Generated Command Registry
 
 Commands are auto-generated from the jawn oclif manifest (JSON), not hand-coded. This ensures:
+
 - The extension always stays in sync with the CLI plugin
 - Flag additions/removals are automatic
 - UI metadata (titles, groups) is centralized in `scripts/gen-commands.ts`
@@ -131,6 +134,7 @@ The SF detector only runs once, on first command. This avoids repeated shell cal
 ### Destructive Operation Workflow
 
 Commands marked `destructive: true` (currently only `jawn user strip`) follow a two-step process:
+
 1. Dry-run with `--dry-run` flag to show the user what will change
 2. Explicit user confirmation before applying changes
 

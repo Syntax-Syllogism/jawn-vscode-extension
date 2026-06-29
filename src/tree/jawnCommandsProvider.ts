@@ -79,16 +79,19 @@ function trimTitle(title: string): string {
 }
 
 function orderedGroups(commands: readonly CommandDef[]): [string, CommandDef[]][] {
-	return orderedBuckets(commands, (command) => command.group, ['User Lifecycle', 'AEP Generation']);
+	return orderedBuckets(commands, (command) => command.group);
 }
 
 function orderedSubgroups(commands: readonly CommandDef[]): SubgroupNode[] {
-	return orderedBuckets(commands, (command) => command.subgroup ?? '', ['Generators', 'Selector Helpers', 'Domain-Process Bindings'])
+	return orderedBuckets(commands, (command) => command.subgroup ?? '')
 		.filter(([label]) => label.length > 0)
 		.map(([label, subgroupCommands]) => ({ type: 'subgroup', label, commands: subgroupCommands }));
 }
 
-function orderedBuckets<T>(items: readonly T[], keyOf: (item: T) => string, preferredOrder: readonly string[]): [string, T[]][] {
+// Bucket order follows the registry order (driven by the allow-list in
+// scripts/gen-commands.ts), which is the single source of truth for how groups,
+// subgroups, and commands are sequenced. A Map preserves first-insertion order.
+function orderedBuckets<T>(items: readonly T[], keyOf: (item: T) => string): [string, T[]][] {
 	const buckets = new Map<string, T[]>();
 	for (const item of items) {
 		const key = keyOf(item);
@@ -97,11 +100,7 @@ function orderedBuckets<T>(items: readonly T[], keyOf: (item: T) => string, pref
 		buckets.set(key, bucket);
 	}
 
-	const orderedKeys = [
-		...preferredOrder.filter((key) => buckets.has(key)),
-		...[...buckets.keys()].filter((key) => !preferredOrder.includes(key)),
-	];
-	return orderedKeys.map((key) => [key, buckets.get(key) ?? []]);
+	return [...buckets.entries()];
 }
 
 function commandIcon(command: CommandDef): string {
