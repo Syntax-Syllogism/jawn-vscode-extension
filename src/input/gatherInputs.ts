@@ -237,6 +237,7 @@ async function gatherFlag(
 			flag,
 			label: flag.summary ?? `Select --${flag.name}`,
 			lastValue,
+			includeGitIgnored: command.id === 'jawn.user.restore' && flag.name === 'snapshot',
 		});
 	} else if (flag.kind === 'outputDir') {
 		value = await inputApi.pickOutputDirectory({

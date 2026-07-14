@@ -8,6 +8,7 @@ export interface PickDefFileOptions {
 	flag: FlagDef;
 	label: string;
 	lastValue?: string;
+	includeGitIgnored?: boolean;
 }
 
 const MAX_JSON_CANDIDATES = 200;
@@ -23,13 +24,15 @@ export async function pickDefFile(options: PickDefFileOptions): Promise<string |
 	const relativePaths = uris
 		.map((uri) => relativeWorkspacePath(workspaceRoot, uri.fsPath))
 		.filter((value): value is string => value !== undefined);
-	const visiblePaths = await filterGitIgnoredPaths(workspaceRoot, relativePaths);
+	const visiblePaths = options.includeGitIgnored ? relativePaths : await filterGitIgnoredPaths(workspaceRoot, relativePaths);
 	const items = visiblePaths
 		.sort((left, right) => left.localeCompare(right))
 		.map((value) => defFileItem(value));
 
 	const existingLastValue = await existingWorkspaceFile(workspaceRoot, options.lastValue);
-	const [lastValue] = existingLastValue ? await filterGitIgnoredPaths(workspaceRoot, [existingLastValue]) : [];
+	const [lastValue] = existingLastValue
+		? options.includeGitIgnored ? [existingLastValue] : await filterGitIgnoredPaths(workspaceRoot, [existingLastValue])
+		: [];
 	return showWorkspaceQuickPick({
 		items,
 		lastValue,

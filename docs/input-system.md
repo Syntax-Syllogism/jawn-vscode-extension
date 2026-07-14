@@ -27,6 +27,8 @@ Exclusive groups (e.g. `--at4dx` / `--fflib`, or `--user` / `--users-def`) are g
 
 Candidates are discovered with `vscode.workspace.findFiles('**/*.json', JSON_EXCLUDE_GLOB, 200)`, where the exclude glob skips noisy folders such as `.git`, `.sf`, `.sfdx`, `.vscode`, `node_modules`, `dist`, `out`, and `coverage`. The discovered workspace-relative paths are then filtered through `git check-ignore --stdin -z`, so files ignored by `.gitignore`, `.git/info/exclude`, or global git ignore rules are omitted. If Git is unavailable or the workspace is not a Git repository, the filter fails open and keeps the discovered candidates.
 
+`jawn user restore --snapshot` opts into including Git-ignored JSON files, so ephemeral snapshots remain selectable while ordinary definition-file prompts keep the default filter.
+
 The last-used value is stored as a workspace-relative file path. On the next run, the picker checks that the path still exists, is not a directory, remains inside the workspace, and is not ignored by Git. Valid last-used files are injected as the first Quick Pick item with description `Last used - <parent directory>`.
 
 Selected values are passed to the CLI as workspace-relative paths, for example `config/users.json`. Cancelling a required `file` prompt aborts the command; cancelling an optional non-exclusive `file` prompt skips that flag. Cancelling after choosing a member of an exclusive group, such as `Users definition file` in the `userTarget` group, aborts the command because the user has already committed to that targeting path.

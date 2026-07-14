@@ -4,6 +4,18 @@ All notable changes to the "jawn-ext" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.2.0] - 2026-07-13
+
+### Added
+
+- User snapshot restore and diff commands
+
+## [0.1.6]
+
+### Added
+
+- Added guided User Snapshot, User Restore, and User Diff commands.
+
 ## [0.1.5]
 
 ### Changed

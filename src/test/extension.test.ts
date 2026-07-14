@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import * as vscode from 'vscode';
 import { pickDefFile, type PickDefFileOptions } from '../input/defFilePicker';
 import { pickFolder } from '../input/filePicker';
@@ -25,6 +25,9 @@ suite('Jawn extension', () => {
 			'jawn.user.strip',
 			'jawn.user.freeze',
 			'jawn.user.unfreeze',
+			'jawn.user.snapshot',
+			'jawn.user.restore',
+			'jawn.user.diff',
 			'jawn.aep.generate',
 			'jawn.aep.generate.selector',
 			'jawn.aep.generate.domain',
@@ -42,6 +45,22 @@ suite('Jawn extension', () => {
 				assert.ok(knownKinds.has(flag.kind), `${command.id}:${flag.name} has unknown kind ${flag.kind}`);
 			}
 		}
+	});
+
+	test('registry metadata covers user snapshot, restore, and diff branches', () => {
+		const snapshot = commandById('jawn.user.snapshot');
+		assert.strictEqual(snapshot.flags.find((flag) => flag.name === 'user')?.exclusiveGroup, 'userTarget');
+		assert.strictEqual(snapshot.flags.find((flag) => flag.name === 'out'), undefined);
+		const restore = commandById('jawn.user.restore');
+		assert.strictEqual(restore.flags.find((flag) => flag.name === 'snapshot')?.kind, 'file');
+		assert.strictEqual(restore.flags.find((flag) => flag.name === 'no-prompt')?.kind, 'boolean');
+		const diff = commandById('jawn.user.diff');
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'against')?.dependsOnFlag, 'user');
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'against')?.required, true);
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'personas-def')?.dependsOnFlag, 'users-def');
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'personas-def')?.required, true);
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'external-id')?.dependsOnFlag, 'users-def');
+		assert.strictEqual(diff.flags.find((flag) => flag.name === 'output'), undefined);
 	});
 
 	test('AEP registry captures required input metadata', () => {
@@ -69,23 +88,24 @@ suite('Jawn extension', () => {
 	});
 
 	test('generated registry stays in sync with the checked-in manifest fixture', () => {
+		const repositoryRoot = resolve(__dirname, '..', '..');
 		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-codegen-'));
 		const registryPath = join(tempDir, 'commands.generated.ts');
 		const packagePath = join(tempDir, 'package.json');
-		writeFileSync(packagePath, readFileSync('package.json', 'utf8'));
+		writeFileSync(packagePath, readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 
 		execFileSync('node', [
 			'--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
 			'--experimental-strip-types',
-			'scripts/gen-commands.ts',
-			'vendor/jawn.oclif.manifest.json',
+			join(repositoryRoot, 'scripts', 'gen-commands.ts'),
+			join(repositoryRoot, 'vendor', 'jawn.oclif.manifest.json'),
 			registryPath,
 			packagePath,
-		], { cwd: process.cwd() });
+		], { cwd: repositoryRoot });
 
-		assert.strictEqual(readFileSync(registryPath, 'utf8'), readFileSync('src/registry/commands.generated.ts', 'utf8'));
+		assert.strictEqual(readFileSync(registryPath, 'utf8'), readFileSync(join(repositoryRoot, 'src', 'registry', 'commands.generated.ts'), 'utf8'));
 		const generatedPackage = JSON.parse(readFileSync(packagePath, 'utf8')) as { contributes: { commands: unknown } };
-		const currentPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { contributes: { commands: unknown } };
+		const currentPackage = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')) as { contributes: { commands: unknown } };
 		assert.deepStrictEqual(generatedPackage.contributes.commands, currentPackage.contributes.commands);
 	});
 
@@ -366,6 +386,29 @@ suite('Jawn extension', () => {
 		assert.deepStrictEqual(capturedItems[0].map((item) => (item as unknown as { value: string }).value), ['config/users.json']);
 	});
 
+	test('pickDefFile can include gitignored snapshots for restore', async () => {
+		const flag = commandById('jawn.user.restore').flags.find((candidate) => candidate.name === 'snapshot')!;
+		const tempDir = mkdtempSync(join(tmpdir(), 'jawn-test-'));
+		mkdirSync(join(tempDir, 'snapshots'));
+		writeFileSync(join(tempDir, '.gitignore'), 'snapshots/**\n');
+		writeFileSync(join(tempDir, 'snapshots', 'user.json'), '{}');
+		execFileSync('git', ['init'], { cwd: tempDir });
+		const capturedItems: vscode.QuickPickItem[][] = [];
+
+		await withWorkspaceFolders([tempDir], async () => {
+			await withFindFiles([vscode.Uri.file(join(tempDir, 'snapshots', 'user.json'))], async () => {
+				await withQuickPick((items) => {
+					capturedItems.push([...items]);
+					return undefined;
+				}, async () => {
+					await pickDefFile({ flag, label: 'Snapshot JSON file to restore from.', includeGitIgnored: true });
+				});
+			});
+		});
+
+		assert.deepStrictEqual(capturedItems[0].map((item) => (item as unknown as { value: string }).value), ['snapshots/user.json']);
+	});
+
 	test('pickDefFile puts an existing last-used file first and deduplicates discovered matches', async () => {
 		const command = commandById('jawn.user.provision');
 		const flag = command.flags.find((f) => f.name === 'users-def')!;
@@ -451,6 +494,67 @@ suite('Jawn extension', () => {
 			'--user', 'Username:myUser@email.com',
 			'--target-org', 'dev',
 		]);
+	});
+
+	test('gatherInputs gathers both diff dependents for users-def mode', async () => {
+		const command = commandById('jawn.user.diff');
+		const inputApi: InputApi = {
+			pickOrg: async () => 'dev',
+			pickFile: async () => undefined,
+			pickDefFile: async ({ flag }) => `${flag.name}.json`,
+			pickFolder: async () => undefined,
+			pickOutputDirectory: async () => undefined,
+			showInputBox: async () => 'FederationIdentifier',
+			showQuickPick: async (items) => items.find((item) => item.label === 'Users definition file'),
+			showBooleanPick: async () => [],
+			showWarningMessage: async () => undefined,
+		};
+
+		const result = await gatherInputs(command, new LastValueStore(new MemoryMemento()), inputApi);
+		assert.deepStrictEqual(result?.args, [
+			'--users-def', 'users-def.json',
+			'--personas-def', 'personas-def.json',
+			'--external-id', 'FederationIdentifier',
+			'--target-org', 'dev',
+		]);
+	});
+
+	test('gatherInputs supports snapshot target modes and restore options', async () => {
+		const snapshot = commandById('jawn.user.snapshot');
+		const gatherSnapshot = async (targetLabel: string) => gatherInputs(snapshot, new LastValueStore(new MemoryMemento()), {
+			pickOrg: async () => 'dev', pickFile: async () => undefined, pickDefFile: async () => 'users.json',
+			pickFolder: async () => undefined, pickOutputDirectory: async () => undefined,
+			showInputBox: async (options) => options.prompt?.includes('single user') ? 'Username:user@example.com' : 'FederationIdentifier',
+			showQuickPick: async (items) => items.find((item) => item.label === targetLabel), showBooleanPick: async () => [], showWarningMessage: async () => undefined,
+		});
+		assert.deepStrictEqual((await gatherSnapshot('Single user'))?.args, ['--user', 'Username:user@example.com', '--target-org', 'dev']);
+		assert.deepStrictEqual((await gatherSnapshot('Users definition file'))?.args, ['--users-def', 'users.json', '--external-id', 'FederationIdentifier', '--target-org', 'dev']);
+
+		let includeGitIgnored: boolean | undefined;
+		const restore = await gatherInputs(commandById('jawn.user.restore'), new LastValueStore(new MemoryMemento()), {
+			pickOrg: async () => 'dev', pickFile: async () => undefined,
+			pickDefFile: async (options) => { includeGitIgnored = options.includeGitIgnored; return 'snapshots/user.json'; },
+			pickFolder: async () => undefined, pickOutputDirectory: async () => undefined, showInputBox: async () => undefined,
+			showQuickPick: async () => undefined, showBooleanPick: async (items) => items, showWarningMessage: async () => undefined,
+		});
+		assert.strictEqual(includeGitIgnored, true);
+		assert.deepStrictEqual(restore?.args, ['--target-org', 'dev', '--snapshot', 'snapshots/user.json', '--no-prompt', '--dry-run']);
+	});
+
+	test('gatherInputs supports diff single-user mode and cancels required follow-ups', async () => {
+		const diff = commandById('jawn.user.diff');
+		const inputApi: InputApi = {
+			pickOrg: async () => 'dev', pickFile: async () => undefined, pickDefFile: async () => 'users.json',
+			pickFolder: async () => undefined, pickOutputDirectory: async () => undefined,
+			showInputBox: async (options) => options.prompt?.includes('baseline') ? 'Username:baseline@example.com' : 'Username:user@example.com',
+			showQuickPick: async (items) => items.find((item) => item.label === 'Single user'), showBooleanPick: async () => [], showWarningMessage: async () => undefined,
+		};
+		assert.deepStrictEqual((await gatherInputs(diff, new LastValueStore(new MemoryMemento()), inputApi))?.args, ['--user', 'Username:user@example.com', '--against', 'Username:baseline@example.com', '--target-org', 'dev']);
+		assert.strictEqual(await gatherInputs(diff, new LastValueStore(new MemoryMemento()), { ...inputApi, showInputBox: async () => undefined }), undefined);
+		assert.strictEqual(await gatherInputs(diff, new LastValueStore(new MemoryMemento()), {
+			...inputApi, showQuickPick: async (items) => items.find((item) => item.label === 'Users definition file'),
+			pickDefFile: async ({ flag }) => flag.name === 'personas-def' ? undefined : 'users.json',
+		}), undefined);
 	});
 
 	test('gatherInputs chooses exactly one AEP flavor flag', async () => {
@@ -627,6 +731,13 @@ suite('Jawn extension', () => {
 			'--target-org', 'dev',
 			'--no-prompt',
 		]);
+		const restore = commandById('jawn.user.restore');
+		assert.deepStrictEqual(buildJawnArgs(restore, ['--target-org', 'dev', '--snapshot', 'snapshot.json']), [
+			'jawn', 'user', 'restore', '--target-org', 'dev', '--snapshot', 'snapshot.json',
+		]);
+		assert.deepStrictEqual(buildJawnArgs(restore, ['--target-org', 'dev', '--snapshot', 'snapshot.json', '--no-prompt']), [
+			'jawn', 'user', 'restore', '--target-org', 'dev', '--snapshot', 'snapshot.json', '--no-prompt',
+		]);
 
 		assert.deepStrictEqual(buildJawnArgs(commandById('jawn.aep.generate.selector'), ['--target-org', 'dev', '--sobject', 'Account', '--at4dx']), [
 			'jawn', 'aep', 'generate', 'selector',
@@ -703,7 +814,32 @@ suite('Jawn extension', () => {
 		assert.ok(!spawnedArgs[0].includes('--json'));
 		assert.deepStrictEqual(infos, ['SF Jawn: AEP Generate Selector completed.']);
 		assert.strictEqual(opened[0][0], 'revealInExplorer');
-		assert.strictEqual((opened[0][1] as vscode.Uri).fsPath, '/repo/generated-files');
+		assert.strictEqual((opened[0][1] as vscode.Uri).fsPath, join('/repo', 'generated-files'));
+	});
+
+	test('runner executes restore once through the standard strategy', async () => {
+		const restore = commandById('jawn.user.restore');
+		const spawnedArgs: string[][] = [];
+		const runner = createCommandRunner({
+			output: new MemoryOutputChannel(),
+			spawnProcess: (_file, args) => {
+				spawnedArgs.push([...args]);
+				return fakeChildProcess('Restored snapshot');
+			},
+			withProgress: async (_options, task) => task({ report: () => undefined }, new vscode.CancellationTokenSource().token),
+			showInformationMessage: async () => undefined as never,
+			showWarningMessage: async () => undefined as never,
+			showErrorMessage: async () => undefined as never,
+		} satisfies RunnerDeps);
+
+		await runner.run(restore, {
+			args: ['--target-org', 'dev', '--snapshot', 'snapshots/user.json', '--no-prompt'],
+			displayArgs: ['--target-org', 'dev', '--snapshot', 'snapshots/user.json', '--no-prompt'],
+		});
+
+		assert.deepStrictEqual(spawnedArgs, [[
+			'jawn', 'user', 'restore', '--target-org', 'dev', '--snapshot', 'snapshots/user.json', '--no-prompt',
+		]]);
 	});
 
 	test('runner does not offer to open output folder after AEP dry-run', async () => {
@@ -1106,6 +1242,9 @@ suite('Jawn extension', () => {
 			'jawn.user.strip',
 			'jawn.user.freeze',
 			'jawn.user.unfreeze',
+			'jawn.user.snapshot',
+			'jawn.user.restore',
+			'jawn.user.diff',
 		]);
 
 		const aep = groups[1];

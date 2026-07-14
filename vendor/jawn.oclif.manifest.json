@@ -147,9 +147,9 @@
       "args": {},
       "description": "Resolves active users who have access to a target and attributes each access path to Profile, Permission Set, or Permission Set Group sources.",
       "examples": [
-        "Field access in human output (default):\n<%= config.bin %> <%= command.id %> --type field --target Account.CustomField\\_\\_c --target-org myOrg",
+        "Field access in human output (default):\n<%= config.bin %> <%= command.id %> --type field --target Account.CustomField__c --target-org myOrg",
         "Object access in csv output:\n<%= config.bin %> <%= command.id %> --type object --target Account --target-org myOrg --output csv",
-        "Field access in json output:\n<%= config.bin %> <%= command.id %> --type field --target Account.CustomField\\_\\_c --target-org myOrg --output json"
+        "Field access in json output:\n<%= config.bin %> <%= command.id %> --type field --target Account.CustomField__c --target-org myOrg --output json"
       ],
       "flags": {
         "json": {
@@ -245,6 +245,142 @@
         "jawn:access:user",
         "access:jawn:user",
         "access:user:jawn"
+      ]
+    },
+    "jawn:user:diff": {
+      "aliases": [],
+      "args": {},
+      "description": "Reports read-only drift across profile, role, permission sets, permission set groups, public groups, and queues without applying changes.",
+      "examples": [
+        "Compare users in a definition file against their personas:\n<%= config.bin %> <%= command.id %> --users-def config/user-def.json --personas-def config/persona-def.json --external-id FederationIdentifier --target-org myOrg",
+        "Compare one user against another:\n<%= config.bin %> <%= command.id %> --user username:new@example.com --against username:template@example.com --target-org myOrg --output csv"
+      ],
+      "flags": {
+        "json": {
+          "description": "Format output as json.",
+          "helpGroup": "GLOBAL",
+          "name": "json",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "flags-dir": {
+          "helpGroup": "GLOBAL",
+          "name": "flags-dir",
+          "summary": "Import flag values from a directory.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "target-org": {
+          "char": "o",
+          "name": "target-org",
+          "noCacheDefault": true,
+          "required": true,
+          "summary": "Target org username or alias.",
+          "hasDynamicHelp": true,
+          "multiple": false,
+          "type": "option"
+        },
+        "user": {
+          "dependsOn": [
+            "against"
+          ],
+          "name": "user",
+          "summary": "Target user to compare using `field:value`.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "against": {
+          "dependsOn": [
+            "user"
+          ],
+          "name": "against",
+          "summary": "Reference user to compare against using `field:value`.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "users-def": {
+          "dependsOn": [
+            "personas-def"
+          ],
+          "name": "users-def",
+          "summary": "Path to user definition JSON file.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "personas-def": {
+          "dependsOn": [
+            "users-def"
+          ],
+          "name": "personas-def",
+          "summary": "Path to persona definition JSON file.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "external-id": {
+          "name": "external-id",
+          "summary": "Default User field used to match entries in `--users-def`.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "output": {
+          "name": "output",
+          "summary": "Output format when not using global `--json`.",
+          "default": "human",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "options": [
+            "human",
+            "csv",
+            "json"
+          ],
+          "type": "option"
+        },
+        "verbose": {
+          "name": "verbose",
+          "summary": "Include assignments that are already present in both sides in human output.",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "api-version": {
+          "description": "Override the api version used for api requests made by this command",
+          "name": "api-version",
+          "summary": "Override the api version used for the org connection.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        }
+      },
+      "hasDynamicHelp": true,
+      "hiddenAliases": [],
+      "id": "jawn:user:diff",
+      "pluginAlias": "@syntax-syllogism/jawn",
+      "pluginName": "@syntax-syllogism/jawn",
+      "pluginType": "core",
+      "strict": true,
+      "summary": "Compare user assignments against intended persona state or another user.",
+      "enableJsonFlag": true,
+      "isESM": true,
+      "relativePath": [
+        "lib",
+        "commands",
+        "jawn",
+        "user",
+        "diff.js"
+      ],
+      "aliasPermutations": [],
+      "permutations": [
+        "jawn:user:diff",
+        "user:jawn:diff",
+        "user:diff:jawn",
+        "jawn:diff:user",
+        "diff:jawn:user",
+        "diff:user:jawn"
       ]
     },
     "jawn:user:freeze": {
@@ -455,6 +591,194 @@
         "provision:user:jawn"
       ]
     },
+    "jawn:user:restore": {
+      "aliases": [],
+      "args": {},
+      "description": "Re-resolves users by the snapshot match key, reactivates and unfreezes them, and adds missing assignments without removing existing access.",
+      "examples": [
+        "Preview a restore:\n<%= config.bin %> <%= command.id %> --snapshot snapshots/user.json --dry-run --target-org myOrg",
+        "Restore without prompts:\n<%= config.bin %> <%= command.id %> --snapshot snapshots/user.json --target-org myOrg --no-prompt"
+      ],
+      "flags": {
+        "json": {
+          "description": "Format output as json.",
+          "helpGroup": "GLOBAL",
+          "name": "json",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "flags-dir": {
+          "helpGroup": "GLOBAL",
+          "name": "flags-dir",
+          "summary": "Import flag values from a directory.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "target-org": {
+          "char": "o",
+          "name": "target-org",
+          "noCacheDefault": true,
+          "required": true,
+          "summary": "Target org username or alias.",
+          "hasDynamicHelp": true,
+          "multiple": false,
+          "type": "option"
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "required": true,
+          "summary": "Path to a user snapshot JSON file.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "no-prompt": {
+          "name": "no-prompt",
+          "summary": "Skip confirmation prompts before write operations.",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "dry-run": {
+          "name": "dry-run",
+          "summary": "Validate and plan actions without any write operations.",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "api-version": {
+          "description": "Override the api version used for api requests made by this command",
+          "name": "api-version",
+          "summary": "Override the api version used for the org connection.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        }
+      },
+      "hasDynamicHelp": true,
+      "hiddenAliases": [],
+      "id": "jawn:user:restore",
+      "pluginAlias": "@syntax-syllogism/jawn",
+      "pluginName": "@syntax-syllogism/jawn",
+      "pluginType": "core",
+      "strict": true,
+      "summary": "Restore user assignment state from a snapshot file.",
+      "enableJsonFlag": true,
+      "isESM": true,
+      "relativePath": [
+        "lib",
+        "commands",
+        "jawn",
+        "user",
+        "restore.js"
+      ],
+      "aliasPermutations": [],
+      "permutations": [
+        "jawn:user:restore",
+        "user:jawn:restore",
+        "user:restore:jawn",
+        "jawn:restore:user",
+        "restore:jawn:user",
+        "restore:user:jawn"
+      ]
+    },
+    "jawn:user:snapshot": {
+      "aliases": [],
+      "args": {},
+      "description": "Captures matching users' active/frozen state and access assignments using developer/API names so the snapshot can be restored later.",
+      "examples": [
+        "Snapshot a single user:\n<%= config.bin %> <%= command.id %> --user username:someone@example.com --out snapshots/user.json --target-org myOrg",
+        "Snapshot users from a definition file:\n<%= config.bin %> <%= command.id %> --users-def config/user-def.json --external-id FederationIdentifier --out snapshots/users.json --target-org myOrg"
+      ],
+      "flags": {
+        "json": {
+          "description": "Format output as json.",
+          "helpGroup": "GLOBAL",
+          "name": "json",
+          "allowNo": false,
+          "type": "boolean"
+        },
+        "flags-dir": {
+          "helpGroup": "GLOBAL",
+          "name": "flags-dir",
+          "summary": "Import flag values from a directory.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "target-org": {
+          "char": "o",
+          "name": "target-org",
+          "noCacheDefault": true,
+          "required": true,
+          "summary": "Target org username or alias.",
+          "hasDynamicHelp": true,
+          "multiple": false,
+          "type": "option"
+        },
+        "user": {
+          "name": "user",
+          "summary": "Target a single user using `field:value`.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "users-def": {
+          "name": "users-def",
+          "summary": "Path to a user definition JSON file.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "external-id": {
+          "name": "external-id",
+          "summary": "Default User field used to match entries in `--users-def`.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "out": {
+          "name": "out",
+          "summary": "Path to write the snapshot JSON file.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        },
+        "api-version": {
+          "description": "Override the api version used for api requests made by this command",
+          "name": "api-version",
+          "summary": "Override the api version used for the org connection.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
+        }
+      },
+      "hasDynamicHelp": true,
+      "hiddenAliases": [],
+      "id": "jawn:user:snapshot",
+      "pluginAlias": "@syntax-syllogism/jawn",
+      "pluginName": "@syntax-syllogism/jawn",
+      "pluginType": "core",
+      "strict": true,
+      "summary": "Capture user assignment state to a portable snapshot file.",
+      "enableJsonFlag": true,
+      "isESM": true,
+      "relativePath": [
+        "lib",
+        "commands",
+        "jawn",
+        "user",
+        "snapshot.js"
+      ],
+      "aliasPermutations": [],
+      "permutations": [
+        "jawn:user:snapshot",
+        "user:jawn:snapshot",
+        "user:snapshot:jawn",
+        "jawn:snapshot:user",
+        "snapshot:jawn:user",
+        "snapshot:user:jawn"
+      ]
+    },
     "jawn:user:strip": {
       "aliases": [],
       "args": {},
@@ -462,7 +786,8 @@
       "examples": [
         "Preview a strip for a single user:\n<%= config.bin %> <%= command.id %> --user username:someone@example.com --dry-run --target-org myOrg",
         "Strip users from a definition file without prompts:\n<%= config.bin %> <%= command.id %> --users-def config/user-def.json --external-id FederationIdentifier --target-org myOrg --no-prompt",
-        "Keep permission set licenses while stripping everything else:\n<%= config.bin %> <%= command.id %> --users-def config/user-def.json --keep-licenses --target-org myOrg --dry-run"
+        "Keep permission set licenses while stripping everything else:\n<%= config.bin %> <%= command.id %> --users-def config/user-def.json --keep-licenses --target-org myOrg --dry-run",
+        "Capture a restorable snapshot before stripping:\n<%= config.bin %> <%= command.id %> --user username:someone@example.com --snapshot snapshots/user.json --target-org myOrg --no-prompt"
       ],
       "flags": {
         "json": {
@@ -564,6 +889,13 @@
           "summary": "Keep queue memberships.",
           "allowNo": false,
           "type": "boolean"
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "summary": "Write a portable user snapshot JSON file before stripping access, including during dry-run.",
+          "hasDynamicHelp": false,
+          "multiple": false,
+          "type": "option"
         },
         "api-version": {
           "description": "Override the api version used for api requests made by this command",
@@ -1140,7 +1472,7 @@
       "description": "Describes the target SObject and scaffolds selector artifacts in either AT4DX or fflib flavor.",
       "examples": [
         "Generate AT4DX selector files:\n<%= config.bin %> <%= command.id %> --target-org myOrg --sobject Account --at4dx",
-        "Generate fflib selector files with a prefix:\n<%= config.bin %> <%= command.id %> --target-org myOrg --sobject Property\\_\\_c --fflib --prefix foobar"
+        "Generate fflib selector files with a prefix:\n<%= config.bin %> <%= command.id %> --target-org myOrg --sobject Property__c --fflib --prefix foobar"
       ],
       "flags": {
         "json": {
@@ -1975,5 +2307,5 @@
       ]
     }
   },
-  "version": "0.3.3"
+  "version": "0.4.1"
 }

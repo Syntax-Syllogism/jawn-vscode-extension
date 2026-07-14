@@ -40,6 +40,9 @@ const allowList = new Set([
 	'jawn user strip',
 	'jawn user freeze',
 	'jawn user unfreeze',
+	'jawn user snapshot',
+	'jawn user restore',
+	'jawn user diff',
 	'jawn aep generate',
 	'jawn aep generate selector',
 	'jawn aep generate domain',
@@ -57,6 +60,9 @@ const titleById = new Map([
 	['jawn user strip', 'SF Jawn: User Strip'],
 	['jawn user freeze', 'SF Jawn: User Freeze'],
 	['jawn user unfreeze', 'SF Jawn: User Unfreeze'],
+	['jawn user snapshot', 'SF Jawn: User Snapshot'],
+	['jawn user restore', 'SF Jawn: User Restore'],
+	['jawn user diff', 'SF Jawn: User Diff'],
 	['jawn aep generate', 'SF Jawn: AEP Generate (Multiple)'],
 	['jawn aep generate selector', 'SF Jawn: AEP Generate Selector'],
 	['jawn aep generate domain', 'SF Jawn: AEP Generate Domain'],
@@ -74,6 +80,9 @@ const groupById = new Map([
 	['jawn user strip', 'User Lifecycle'],
 	['jawn user freeze', 'User Lifecycle'],
 	['jawn user unfreeze', 'User Lifecycle'],
+	['jawn user snapshot', 'User Lifecycle'],
+	['jawn user restore', 'User Lifecycle'],
+	['jawn user diff', 'User Lifecycle'],
 	['jawn aep generate', 'AEP Generation'],
 	['jawn aep generate selector', 'AEP Generation'],
 	['jawn aep generate domain', 'AEP Generation'],
@@ -106,11 +115,14 @@ const userTargetFlags = new Set(['user', 'users-def']);
 
 const guiHiddenFlagsByCommand = new Map<string, Set<string>>([
 	['jawn user access', new Set(['output'])],
+	['jawn user snapshot', new Set(['out'])],
+	['jawn user diff', new Set(['output'])],
 ]);
 
 const placeholderByCommandFlag = new Map([
 	['*:user', 'Username:myUser@email.com'],
 	['jawn user access:target', 'Object__c.Field__c'],
+	['jawn user diff:against', 'Username:otherUser@email.com'],
 ]);
 
 const summaryByCommandFlag = new Map([
@@ -118,6 +130,8 @@ const summaryByCommandFlag = new Map([
 	['jawn user strip:external-id', 'Default field used to match users in the definition file.'],
 	['jawn user freeze:external-id', 'Default field used to match users in the definition file.'],
 	['jawn user unfreeze:external-id', 'Default field used to match users in the definition file.'],
+	['jawn user diff:against', 'Compare against this baseline user or persona.'],
+	['jawn user restore:snapshot', 'Snapshot JSON file to restore from.'],
 	['jawn aep generate action:class-name', 'Action class name to generate.'],
 	['jawn aep generate criteria:class-name', 'Criteria class name to generate.'],
 ]);
@@ -160,7 +174,9 @@ function commandDef(command: ManifestCommand): Record<string, unknown> {
 		title: titleById.get(cliId) ?? cliId,
 		group: groupById.get(cliId) ?? 'User Lifecycle',
 		subgroup: subgroupById.get(cliId),
-		supportsNoPrompt: supportsNoPrompt || undefined,
+		// restore exposes --no-prompt as a normal picker option; it must not be
+		// injected or routed through the special confirmation strategy.
+		supportsNoPrompt: supportsNoPrompt && cliId !== 'jawn user restore' ? true : undefined,
 		destructive: cliId === 'jawn user strip' ? true : undefined,
 		requireOneOf: requireOneOfById.get(cliId),
 		flags: Object.entries(command.flags ?? {})
@@ -168,9 +184,9 @@ function commandDef(command: ManifestCommand): Record<string, unknown> {
 			.sort(([left], [right]) => flagOrder(cliId, left) - flagOrder(cliId, right))
 			.map(([name, flag]) => omitUndefined({
 				name,
-				kind: flagKind(name, flag),
+				kind: flagKind(cliId, name, flag),
 				summary: summaryFor(cliId, name, flag),
-				required: flag.required || undefined,
+				required: flag.required || requiredOverride(cliId, name) || undefined,
 				options: flag.options,
 				placeholder: placeholderFor(cliId, name),
 				exclusiveGroup: exclusiveGroupFor(command, name),
@@ -180,15 +196,19 @@ function commandDef(command: ManifestCommand): Record<string, unknown> {
 	});
 }
 
+function requiredOverride(commandId: string, flagName: string): boolean {
+	return commandId === 'jawn user diff' && (flagName === 'against' || flagName === 'personas-def');
+}
+
 function shouldPromptForFlag(commandId: string, name: string): boolean {
-	if (name === 'json' || name === 'no-prompt' || name === 'api-version' || name === 'flags-dir') {
+	if (name === 'json' || (name === 'no-prompt' && commandId !== 'jawn user restore') || name === 'api-version' || name === 'flags-dir') {
 		return false;
 	}
 
 	return !guiHiddenFlagsByCommand.get(commandId)?.has(name);
 }
 
-function flagKind(name: string, flag: ManifestFlag): string {
+function flagKind(commandId: string, name: string, flag: ManifestFlag): string {
 	if (name === 'target-org') {
 		return 'org';
 	}
@@ -197,6 +217,9 @@ function flagKind(name: string, flag: ManifestFlag): string {
 	}
 	if (name === 'output-path') {
 		return 'outputDir';
+	}
+	if (commandId === 'jawn user restore' && name === 'snapshot') {
+		return 'file';
 	}
 	if (flag.type === 'boolean') {
 		return 'boolean';
@@ -225,6 +248,14 @@ function exclusiveGroupFor(command: ManifestCommand, flagName: string): string |
 }
 
 function dependsOnFlagFor(command: ManifestCommand, flagName: string): string | undefined {
+	const commandId = cliCommandId(command.id);
+	const explicit = new Map([
+		['jawn user diff:against', 'user'],
+		['jawn user diff:personas-def', 'users-def'],
+	]).get(`${commandId}:${flagName}`);
+	if (explicit) {
+		return explicit;
+	}
 	if (flagName !== 'external-id') {
 		return undefined;
 	}
@@ -249,7 +280,7 @@ function summaryFor(commandId: string, flagName: string, flag: ManifestFlag): st
 }
 
 function flagOrder(commandId: string, flagName: string): number {
-	if (!['jawn user strip', 'jawn user freeze', 'jawn user unfreeze'].includes(commandId)) {
+	if (!['jawn user strip', 'jawn user freeze', 'jawn user unfreeze', 'jawn user snapshot', 'jawn user diff'].includes(commandId)) {
 		return 0;
 	}
 
@@ -257,6 +288,9 @@ function flagOrder(commandId: string, flagName: string): number {
 	// `--target-org` and the rest. `--external-id` is not ordered here: it carries
 	// `dependsOnFlag` and is only prompted within the `--users-def` branch.
 	if (flagName === 'user') {
+		return -1;
+	}
+	if (flagName === 'users-def') {
 		return -1;
 	}
 

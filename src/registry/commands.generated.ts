@@ -85,16 +85,16 @@ export const commands: readonly CommandDef[] = [
 				"exclusiveGroup": "userTarget"
 			},
 			{
-				"name": "target-org",
-				"kind": "org",
-				"summary": "Target org username or alias.",
-				"required": true
-			},
-			{
 				"name": "users-def",
 				"kind": "file",
 				"summary": "Path to a user definition JSON file.",
 				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
 			},
 			{
 				"name": "external-id",
@@ -141,6 +141,11 @@ export const commands: readonly CommandDef[] = [
 				"name": "keep-queues",
 				"kind": "boolean",
 				"summary": "Keep queue memberships."
+			},
+			{
+				"name": "snapshot",
+				"kind": "string",
+				"summary": "Write a portable user snapshot JSON file before stripping access, including during dry-run."
 			}
 		]
 	},
@@ -159,16 +164,16 @@ export const commands: readonly CommandDef[] = [
 				"exclusiveGroup": "userTarget"
 			},
 			{
-				"name": "target-org",
-				"kind": "org",
-				"summary": "Target org username or alias.",
-				"required": true
-			},
-			{
 				"name": "users-def",
 				"kind": "file",
 				"summary": "Path to a user definition JSON file.",
 				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
 			},
 			{
 				"name": "external-id",
@@ -198,16 +203,16 @@ export const commands: readonly CommandDef[] = [
 				"exclusiveGroup": "userTarget"
 			},
 			{
-				"name": "target-org",
-				"kind": "org",
-				"summary": "Target org username or alias.",
-				"required": true
-			},
-			{
 				"name": "users-def",
 				"kind": "file",
 				"summary": "Path to a user definition JSON file.",
 				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
 			},
 			{
 				"name": "external-id",
@@ -219,6 +224,122 @@ export const commands: readonly CommandDef[] = [
 				"name": "dry-run",
 				"kind": "boolean",
 				"summary": "Validate and plan actions without any write operations."
+			}
+		]
+	},
+	{
+		"id": "jawn.user.snapshot",
+		"cliId": "jawn user snapshot",
+		"title": "SF Jawn: User Snapshot",
+		"group": "User Lifecycle",
+		"flags": [
+			{
+				"name": "user",
+				"kind": "string",
+				"summary": "Target a single user as field:value (e.g. Username:user@example.com).",
+				"placeholder": "Username:myUser@email.com",
+				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "users-def",
+				"kind": "file",
+				"summary": "Path to a user definition JSON file.",
+				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
+			},
+			{
+				"name": "external-id",
+				"kind": "string",
+				"summary": "Default User field used to match entries in `--users-def`.",
+				"dependsOnFlag": "users-def"
+			}
+		]
+	},
+	{
+		"id": "jawn.user.restore",
+		"cliId": "jawn user restore",
+		"title": "SF Jawn: User Restore",
+		"group": "User Lifecycle",
+		"flags": [
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
+			},
+			{
+				"name": "snapshot",
+				"kind": "file",
+				"summary": "Snapshot JSON file to restore from.",
+				"required": true
+			},
+			{
+				"name": "no-prompt",
+				"kind": "boolean",
+				"summary": "Skip confirmation prompts before write operations."
+			},
+			{
+				"name": "dry-run",
+				"kind": "boolean",
+				"summary": "Validate and plan actions without any write operations."
+			}
+		]
+	},
+	{
+		"id": "jawn.user.diff",
+		"cliId": "jawn user diff",
+		"title": "SF Jawn: User Diff",
+		"group": "User Lifecycle",
+		"flags": [
+			{
+				"name": "user",
+				"kind": "string",
+				"summary": "Target a single user as field:value (e.g. Username:user@example.com).",
+				"placeholder": "Username:myUser@email.com",
+				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "users-def",
+				"kind": "file",
+				"summary": "Path to user definition JSON file.",
+				"exclusiveGroup": "userTarget"
+			},
+			{
+				"name": "target-org",
+				"kind": "org",
+				"summary": "Target org username or alias.",
+				"required": true
+			},
+			{
+				"name": "against",
+				"kind": "string",
+				"summary": "Compare against this baseline user or persona.",
+				"required": true,
+				"placeholder": "Username:otherUser@email.com",
+				"dependsOnFlag": "user"
+			},
+			{
+				"name": "personas-def",
+				"kind": "file",
+				"summary": "Path to persona definition JSON file.",
+				"required": true,
+				"dependsOnFlag": "users-def"
+			},
+			{
+				"name": "external-id",
+				"kind": "string",
+				"summary": "Default User field used to match entries in `--users-def`.",
+				"dependsOnFlag": "users-def"
+			},
+			{
+				"name": "verbose",
+				"kind": "boolean",
+				"summary": "Include assignments that are already present in both sides in human output."
 			}
 		]
 	},
