@@ -283,7 +283,7 @@ it('should generate valid CommandDef from oclif manifest', () => {
 Some tests load a minimal oclif manifest from `vendor/jawn.oclif.manifest.json`. This file is auto-generated from the jawn plugin. If it's outdated, regenerate it:
 
 ```bash
-cd ../jawn-cli-plugin
+cd ../jawn
 npm run oclif-manifest
 cp dist/manifest.json ../jawn-vscode-extension/vendor/jawn.oclif.manifest.json
 ```

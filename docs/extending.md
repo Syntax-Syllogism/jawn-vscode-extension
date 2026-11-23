@@ -13,7 +13,7 @@ First, check that the jawn plugin version in your `package.json` has the new com
 If you have the jawn plugin source locally, regenerate it:
 
 ```bash
-cd ../jawn-cli-plugin
+cd ../jawn
 npm run oclif-manifest
 cp dist/manifest.json ../jawn-vscode-extension/vendor/jawn.oclif.manifest.json
 ```

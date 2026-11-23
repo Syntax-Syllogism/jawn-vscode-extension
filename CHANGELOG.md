@@ -62,4 +62,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-23
+
+### Added
+
 - Initial release
+

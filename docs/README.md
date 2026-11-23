@@ -81,7 +81,7 @@ npm run gen:commands       # Regenerate command registry from jawn manifest
 ## Project Structure
 
 ```
-jawn-code-ext/
+jawn-vscode-extension/
   src/
     extension.ts                # Extension entry point
     input/                      # Input gathering (pickers, etc.)
