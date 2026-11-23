@@ -4,6 +4,20 @@ All notable changes to the "jawn-ext" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+## [0.2.2] - 2026-11-23
+
+### Changed
+
+- Internal maintenance and tooling updates
+
+## [0.2.1] - 2026-11-23
+
+### Changed
+
+- Documentation now refers to sibling projects by their public repository names
+
 ## [0.2.0] - 2026-07-13
 
 ### Added
@@ -59,12 +73,3 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Guided AEP command execution
 - AEP command registry generation
 - Jawn lifecycle extension workflows
-
-## [Unreleased]
-
-## [0.2.1] - 2026-11-23
-
-### Added
-
-- Initial release
-
